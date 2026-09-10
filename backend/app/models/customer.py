@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -15,6 +15,14 @@ class Customer(Base):
         primary_key=True,
         autoincrement=True,
     )
+
+    # 当前负责这条客户线索的销售用户。
+    # 暂时允许为空，因为数据库中已经存在旧客户数据。
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )    
 
     name: Mapped[str] = mapped_column(
         String(50),

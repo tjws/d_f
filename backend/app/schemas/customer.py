@@ -41,6 +41,7 @@ class CustomerRead(CustomerCreate):
     """返回给前端的客户模型。"""
 
     id: int
+    owner_id: int | None
     created_at: datetime
     updated_at: datetime
 

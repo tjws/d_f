@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.customer import Customer
+from app.models.user import User
 from app.schemas.customer import (
     CustomerCreate,
     CustomerListResponse,
@@ -12,18 +14,39 @@ from app.schemas.customer import (
     CustomerUpdate,
 )
 
+
 router = APIRouter(
     prefix="/customers",
     tags=["customers"],
 )
 
 
-def _get_customer_or_404(db: Session, customer_id: int) -> Customer:
-    """根据 ID 查询客户，找不到时返回 404。"""
+def _can_view_all_customers(user: User) -> bool:
+    """判断用户是否可以查看全部客户。"""
+
+    return user.role in {"admin", "manager"}
+
+
+def _get_customer_or_404(
+    db: Session,
+    customer_id: int,
+    current_user: User,
+) -> Customer:
+    """查询客户，并检查当前用户是否有权访问。"""
 
     customer = db.get(Customer, customer_id)
 
     if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="客户不存在",
+        )
+
+    # 对无权限用户也返回 404，避免泄露客户是否存在。
+    if (
+        not _can_view_all_customers(current_user)
+        and customer.owner_id != current_user.id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="客户不存在",
@@ -39,12 +62,15 @@ def _get_customer_or_404(db: Session, customer_id: int) -> Customer:
 )
 def create_customer(
     payload: CustomerCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """创建客户并保存到数据库。"""
+    """创建客户，并自动将当前用户设为负责人。"""
 
-    # mode="json" 会把枚举转换为普通字符串，方便写入数据库。
-    customer = Customer(**payload.model_dump(mode="json"))
+    customer = Customer(
+        owner_id=current_user.id,
+        **payload.model_dump(mode="json"),
+    )
 
     db.add(customer)
     db.commit()
@@ -55,26 +81,23 @@ def create_customer(
 
 @router.get("", response_model=CustomerListResponse)
 def list_customers(
-    page: int = Query(1, ge=1, description="页码，从 1 开始"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    keyword: str | None = Query(
-        default=None,
-        max_length=50,
-        description="搜索家长姓名、手机号或学生姓名",
-    ),
-    stage: CustomerStage | None = Query(
-        default=None,
-        description="按意向阶段筛选",
-    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(default=None, max_length=50),
+    stage: CustomerStage | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """分页查询客户，并支持关键词和意向阶段筛选。"""
+    """分页查询客户，并根据角色限制数据范围。"""
 
     filters = []
 
+    # 销售只能看到自己的客户。
+    if not _can_view_all_customers(current_user):
+        filters.append(Customer.owner_id == current_user.id)
+
     if keyword:
-        keyword = keyword.strip()
-        search_pattern = f"%{keyword}%"
+        search_pattern = f"%{keyword.strip()}%"
 
         filters.append(
             or_(
@@ -87,10 +110,7 @@ def list_customers(
     if stage:
         filters.append(Customer.stage == stage.value)
 
-    # 先统计符合条件的客户总数。
     count_statement = select(func.count(Customer.id))
-
-    # 再查询当前页的数据。
     data_statement = select(Customer).order_by(Customer.id)
 
     if filters:
@@ -116,22 +136,32 @@ def list_customers(
 @router.get("/{customer_id}", response_model=CustomerRead)
 def get_customer(
     customer_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """根据 ID 查询单个客户。"""
+    """查询单个客户。"""
 
-    return _get_customer_or_404(db, customer_id)
+    return _get_customer_or_404(
+        db,
+        customer_id,
+        current_user,
+    )
 
 
 @router.patch("/{customer_id}", response_model=CustomerRead)
 def update_customer(
     customer_id: int,
     payload: CustomerUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """只修改请求中提供的字段。"""
+    """修改当前用户有权限访问的客户。"""
 
-    customer = _get_customer_or_404(db, customer_id)
+    customer = _get_customer_or_404(
+        db,
+        customer_id,
+        current_user,
+    )
 
     update_data = payload.model_dump(
         exclude_unset=True,
@@ -153,11 +183,16 @@ def update_customer(
 )
 def delete_customer(
     customer_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """删除指定客户。"""
+    """删除当前用户有权限访问的客户。"""
 
-    customer = _get_customer_or_404(db, customer_id)
+    customer = _get_customer_or_404(
+        db,
+        customer_id,
+        current_user,
+    )
 
     db.delete(customer)
     db.commit()
