@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.customer import Customer
-from app.schemas.customer import CustomerCreate, CustomerRead, CustomerUpdate
-
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerListResponse,
+    CustomerRead,
+    CustomerStage,
+    CustomerUpdate,
+)
 
 router = APIRouter(
     prefix="/customers",
@@ -48,12 +53,64 @@ def create_customer(
     return customer
 
 
-@router.get("", response_model=list[CustomerRead])
-def list_customers(db: Session = Depends(get_db)):
-    """查询全部客户。"""
+@router.get("", response_model=CustomerListResponse)
+def list_customers(
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    keyword: str | None = Query(
+        default=None,
+        max_length=50,
+        description="搜索家长姓名、手机号或学生姓名",
+    ),
+    stage: CustomerStage | None = Query(
+        default=None,
+        description="按意向阶段筛选",
+    ),
+    db: Session = Depends(get_db),
+):
+    """分页查询客户，并支持关键词和意向阶段筛选。"""
 
-    statement = select(Customer).order_by(Customer.id)
-    return db.scalars(statement).all()
+    filters = []
+
+    if keyword:
+        keyword = keyword.strip()
+        search_pattern = f"%{keyword}%"
+
+        filters.append(
+            or_(
+                Customer.name.ilike(search_pattern),
+                Customer.phone.ilike(search_pattern),
+                Customer.student_name.ilike(search_pattern),
+            )
+        )
+
+    if stage:
+        filters.append(Customer.stage == stage.value)
+
+    # 先统计符合条件的客户总数。
+    count_statement = select(func.count(Customer.id))
+
+    # 再查询当前页的数据。
+    data_statement = select(Customer).order_by(Customer.id)
+
+    if filters:
+        count_statement = count_statement.where(*filters)
+        data_statement = data_statement.where(*filters)
+
+    total = db.scalar(count_statement) or 0
+
+    data_statement = data_statement.offset(
+        (page - 1) * page_size
+    ).limit(page_size)
+
+    items = db.scalars(data_statement).all()
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/{customer_id}", response_model=CustomerRead)

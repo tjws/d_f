@@ -46,3 +46,11 @@ class CustomerRead(CustomerCreate):
 
     # 允许 Pydantic 直接读取 SQLAlchemy 模型对象的属性。
     model_config = ConfigDict(from_attributes=True)
+
+class CustomerListResponse(BaseModel):
+    """客户列表响应，包含数据和分页信息。"""
+
+    items: list[CustomerRead]
+    total: int
+    page: int
+    page_size: int
