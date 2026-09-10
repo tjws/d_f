@@ -1,80 +1,106 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.schemas.customer import CustomerCreate
+from app.db.session import get_db
+from app.models.customer import Customer
+from app.schemas.customer import CustomerCreate, CustomerRead, CustomerUpdate
 
 
-from fastapi import APIRouter, HTTPException, status
-
-from app.schemas.customer import CustomerCreate, CustomerUpdate
-
-
-# 客户接口统一使用 /customers 前缀。
 router = APIRouter(
     prefix="/customers",
     tags=["customers"],
 )
 
 
-# 临时内存数据，接入数据库后会替换。
-_fake_customers: list[dict] = []
+def _get_customer_or_404(db: Session, customer_id: int) -> Customer:
+    """根据 ID 查询客户，找不到时返回 404。"""
 
+    customer = db.get(Customer, customer_id)
 
-def _find_customer(customer_id: int) -> dict:
-    """根据 ID 查找客户，找不到时返回 404。"""
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="客户不存在",
+        )
 
-    for customer in _fake_customers:
-        if customer["id"] == customer_id:
-            return customer
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="客户不存在",
-    )
-
-
-@router.post("", status_code=status.HTTP_201_CREATED)
-def create_customer(payload: CustomerCreate):
-    """创建客户。"""
-
-    customer = {
-        "id": len(_fake_customers) + 1,
-        **payload.model_dump(),
-    }
-
-    _fake_customers.append(customer)
     return customer
 
 
-@router.get("")
-def list_customers():
+@router.post(
+    "",
+    response_model=CustomerRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_customer(
+    payload: CustomerCreate,
+    db: Session = Depends(get_db),
+):
+    """创建客户并保存到数据库。"""
+
+    # mode="json" 会把枚举转换为普通字符串，方便写入数据库。
+    customer = Customer(**payload.model_dump(mode="json"))
+
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+
+    return customer
+
+
+@router.get("", response_model=list[CustomerRead])
+def list_customers(db: Session = Depends(get_db)):
     """查询全部客户。"""
 
-    return _fake_customers
+    statement = select(Customer).order_by(Customer.id)
+    return db.scalars(statement).all()
 
 
-@router.get("/{customer_id}")
-def get_customer(customer_id: int):
+@router.get("/{customer_id}", response_model=CustomerRead)
+def get_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+):
     """根据 ID 查询单个客户。"""
 
-    return _find_customer(customer_id)
+    return _get_customer_or_404(db, customer_id)
 
 
-@router.patch("/{customer_id}")
-def update_customer(customer_id: int, payload: CustomerUpdate):
+@router.patch("/{customer_id}", response_model=CustomerRead)
+def update_customer(
+    customer_id: int,
+    payload: CustomerUpdate,
+    db: Session = Depends(get_db),
+):
     """只修改请求中提供的字段。"""
 
-    customer = _find_customer(customer_id)
+    customer = _get_customer_or_404(db, customer_id)
 
-    # exclude_unset=True 可以避免未传入的字段覆盖原数据。
-    update_data = payload.model_dump(exclude_unset=True)
-    customer.update(update_data)
+    update_data = payload.model_dump(
+        exclude_unset=True,
+        mode="json",
+    )
+
+    for field_name, field_value in update_data.items():
+        setattr(customer, field_name, field_value)
+
+    db.commit()
+    db.refresh(customer)
 
     return customer
 
 
-@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_customer(customer_id: int):
+@router.delete(
+    "/{customer_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+):
     """删除指定客户。"""
 
-    customer = _find_customer(customer_id)
-    _fake_customers.remove(customer)
+    customer = _get_customer_or_404(db, customer_id)
+
+    db.delete(customer)
+    db.commit()

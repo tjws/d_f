@@ -1,6 +1,7 @@
+from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CustomerStage(str, Enum):
@@ -33,3 +34,13 @@ class CustomerUpdate(BaseModel):
     stage: CustomerStage | None = None
     source: str | None = Field(default=None, max_length=50)
     remark: str | None = Field(default=None, max_length=500)
+
+class CustomerRead(CustomerCreate):
+    """返回给前端的客户模型。"""
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    # 允许 Pydantic 直接读取 SQLAlchemy 模型对象的属性。
+    model_config = ConfigDict(from_attributes=True)
