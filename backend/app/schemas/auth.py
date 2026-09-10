@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +35,20 @@ class UserRead(BaseModel):
 
     # 允许从 SQLAlchemy User 对象读取字段。
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserRole(str, Enum):
+    """系统允许的用户角色。"""
+
+    SALES = "sales"
+    MANAGER = "manager"
+    ADMIN = "admin"
+
+
+class UserRoleUpdate(BaseModel):
+    """修改用户角色时接收的数据。"""
+
+    role: UserRole
 
 
 class Token(BaseModel):

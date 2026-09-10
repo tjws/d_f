@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.security import ALGORITHM, SECRET_KEY, oauth2_scheme
 from app.db.session import get_db
 from app.models.user import User
-
+from collections.abc import Callable
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -44,3 +44,21 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+def require_roles(*allowed_roles: str) -> Callable:
+    """创建角色权限检查器。"""
+
+    def role_checker(
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        """确认当前用户拥有允许的角色。"""
+
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="当前用户没有执行此操作的权限",
+            )
+
+        return current_user
+
+    return role_checker

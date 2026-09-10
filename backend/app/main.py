@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.api.auth import router as auth_router
 from app.api.customers import router as customers_router
+from app.api.users import router as users_router
 app = FastAPI(
     title="擎天学智 K12 智能销售辅助系统",
     version="0.1.0",
@@ -10,6 +11,8 @@ app = FastAPI(
 app.include_router(customers_router)
 # 注册用户相关接口。
 app.include_router(auth_router)
+# 用户管理接口。
+app.include_router(users_router)
 
 @app.get("/")
 def read_root():

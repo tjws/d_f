@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
@@ -198,3 +198,82 @@ def test_user_cannot_access_another_users_customer(auth_headers):
         headers=another_user_headers,
     )
     assert delete_response.status_code == 404
+
+
+@pytest.fixture
+def admin_headers():
+    """创建测试管理员并返回 Bearer Token 请求头。"""
+
+    headers = _register_and_login("adminuser")
+
+    # 测试中直接设置角色，模拟受控的管理员初始化流程。
+    with SessionLocal() as db:
+        admin_user = db.scalar(
+            select(User).where(User.username == "adminuser")
+        )
+        admin_user.role = "admin"
+        db.commit()
+
+    return headers
+
+
+def test_sales_cannot_manage_users(auth_headers):
+    """普通销售不能查看用户管理接口。"""
+
+    response = client.get(
+        "/users",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_can_list_and_update_user_role(admin_headers):
+    """管理员可以查看用户并修改其他用户角色。"""
+
+    _register_and_login("targetuser")
+
+    users_response = client.get(
+        "/users",
+        headers=admin_headers,
+    )
+
+    assert users_response.status_code == 200
+
+    target_user = next(
+        user
+        for user in users_response.json()
+        if user["username"] == "targetuser"
+    )
+
+    update_response = client.patch(
+        f"/users/{target_user['id']}/role",
+        headers=admin_headers,
+        json={"role": "manager"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["role"] == "manager"
+
+
+def test_admin_cannot_demote_self(admin_headers):
+    """管理员不能把自己的角色降级。"""
+
+    users_response = client.get(
+        "/users",
+        headers=admin_headers,
+    )
+
+    admin_user = next(
+        user
+        for user in users_response.json()
+        if user["username"] == "adminuser"
+    )
+
+    response = client.patch(
+        f"/users/{admin_user['id']}/role",
+        headers=admin_headers,
+        json={"role": "sales"},
+    )
+
+    assert response.status_code == 400
