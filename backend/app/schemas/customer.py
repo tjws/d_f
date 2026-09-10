@@ -22,6 +22,7 @@ class CustomerCreate(BaseModel):
     stage: CustomerStage = CustomerStage.NEW
     source: str | None = Field(default=None, max_length=50)
     remark: str | None = Field(default=None, max_length=500)
+    next_follow_up_at: datetime | None = None
 
 class CustomerUpdate(BaseModel):
     """客户修改模型：所有字段都是可选的，只修改传入的字段。"""
@@ -34,6 +35,7 @@ class CustomerUpdate(BaseModel):
     stage: CustomerStage | None = None
     source: str | None = Field(default=None, max_length=50)
     remark: str | None = Field(default=None, max_length=500)
+    next_follow_up_at: datetime | None = None
 
 class CustomerRead(CustomerCreate):
     """返回给前端的客户模型。"""
