@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+# 加载组织模型，使 users 的字符串外键注册到同一份 metadata。
+from app.models.organization import Organization  # noqa: F401
 
 
 class User(Base):
@@ -39,6 +41,13 @@ class User(Base):
         String(30),
         default="sales",
         nullable=False,
+    )
+
+    # 暂时允许为空，便于兼容已经存在的用户。
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     is_active: Mapped[bool] = mapped_column(

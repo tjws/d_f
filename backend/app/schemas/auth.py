@@ -30,6 +30,7 @@ class UserRead(BaseModel):
     username: str
     full_name: str | None
     role: str
+    organization_id: int | None
     is_active: bool
     created_at: datetime
 
@@ -49,6 +50,12 @@ class UserRoleUpdate(BaseModel):
     """修改用户角色时接收的数据。"""
 
     role: UserRole
+
+
+class UserOrganizationUpdate(BaseModel):
+    """修改用户组织归属时接收的数据。"""
+
+    organization_id: int | None = None
 
 
 class Token(BaseModel):

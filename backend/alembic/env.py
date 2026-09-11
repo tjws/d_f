@@ -12,8 +12,12 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db.base import Base
+from app.models.audit_log import AuditLog
 from app.models.customer import Customer
+from app.models.organization import Organization
+from app.models.role_permission import RolePermission
 from app.models.user import User
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

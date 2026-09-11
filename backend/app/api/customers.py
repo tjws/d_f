@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session
-
+from app.core.permissions import get_data_scope
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.customer import Customer
@@ -21,32 +21,73 @@ router = APIRouter(
 )
 
 
-def _can_view_all_customers(user: User) -> bool:
-    """判断用户是否可以查看全部客户。"""
+def _customer_scope_filters(
+    db: Session,
+    current_user: User,
+    action: str,
+):
+    """根据权限表生成客户查询范围。"""
 
-    return user.role in {"admin", "manager"}
+    data_scope = get_data_scope(
+        db,
+        current_user,
+        "customers",
+        action,
+    )
+
+    if data_scope is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前用户没有执行此操作的权限",
+        )
+
+    if data_scope == "all":
+        return []
+
+    if data_scope == "own":
+        return [Customer.owner_id == current_user.id]
+
+    if data_scope == "organization":
+        # 未分配组织的经理不能看到组织范围客户。
+        if current_user.organization_id is None:
+            return [false()]
+
+        organization_user_ids = select(User.id).where(
+            User.organization_id == current_user.organization_id
+        )
+
+        return [
+            Customer.owner_id.in_(organization_user_ids)
+        ]
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="客户数据范围配置无效",
+    )
 
 
 def _get_customer_or_404(
     db: Session,
     customer_id: int,
     current_user: User,
+    action: str,
 ) -> Customer:
-    """查询客户，并检查当前用户是否有权访问。"""
+    """查询客户，并检查当前用户的数据范围。"""
 
-    customer = db.get(Customer, customer_id)
+    filters = _customer_scope_filters(
+        db,
+        current_user,
+        action,
+    )
+
+    customer = db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            *filters,
+        )
+    )
 
     if customer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="客户不存在",
-        )
-
-    # 对无权限用户也返回 404，避免泄露客户是否存在。
-    if (
-        not _can_view_all_customers(current_user)
-        and customer.owner_id != current_user.id
-    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="客户不存在",
@@ -92,9 +133,13 @@ def list_customers(
 
     filters = []
 
-    # 销售只能看到自己的客户。
-    if not _can_view_all_customers(current_user):
-        filters.append(Customer.owner_id == current_user.id)
+    filters.extend(
+        _customer_scope_filters(
+            db,
+            current_user,
+            "read",
+        )
+    )
 
     if keyword:
         search_pattern = f"%{keyword.strip()}%"
@@ -145,6 +190,7 @@ def get_customer(
         db,
         customer_id,
         current_user,
+        "read",
     )
 
 
@@ -161,6 +207,7 @@ def update_customer(
         db,
         customer_id,
         current_user,
+        "update",
     )
 
     update_data = payload.model_dump(
@@ -192,6 +239,7 @@ def delete_customer(
         db,
         customer_id,
         current_user,
+        "delete",
     )
 
     db.delete(customer)

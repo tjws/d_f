@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from collections.abc import Generator
 from sqlalchemy.orm import Session
@@ -26,6 +26,13 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
 )
 
+@event.listens_for(engine, "connect")
+def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """每次建立 SQLite 连接时启用外键约束。"""
+
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 # 每次调用 SessionLocal() 都会创建一个数据库会话。
 # 后续接口会通过会话查询、新增和修改数据。
