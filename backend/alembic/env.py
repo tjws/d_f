@@ -15,6 +15,11 @@ from app.db.base import Base
 from app.models.audit_log import AuditLog
 from app.models.chat_message import ChatMessage
 from app.models.customer import Customer
+from app.models.customer_profile import CustomerProfile
+from app.models.ai_suggestion import AISuggestion
+from app.models.tag import Tag
+from app.models.customer_tag import CustomerTag
+from app.models.schedule import Schedule
 from app.models.integration_event import IntegrationEvent
 from app.models.organization import Organization
 from app.models.role_permission import RolePermission

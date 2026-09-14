@@ -61,6 +61,10 @@ def setup_function():
         db.execute(
             delete(User).where(User.wecom_userid.like("http-user-%"))
         )
+        # 清理聊天回调测试专用用户，避免唯一 wecom_userid 影响重复运行。
+        db.execute(
+            delete(User).where(User.wecom_userid == "callback-chat-user")
+        )
         db.execute(delete(User).where(User.username == "conflict_sales"))
         db.execute(delete(User).where(User.username == "existing_manager"))
         db.execute(delete(Organization))
