@@ -50,6 +50,14 @@ class User(Base):
         index=True,
     )
 
+    # 企业微信内部成员的唯一标识；本地账号可以暂时为空。
+    wecom_userid: Mapped[str | None] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

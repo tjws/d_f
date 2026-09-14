@@ -9,6 +9,7 @@ from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.customer import Customer
 from app.models.organization import Organization
+from app.models.student import Student
 from app.models.user import User
 from scripts import promote_user
 
@@ -22,6 +23,7 @@ def setup_function():
     with SessionLocal() as db:
         # 先清理审计日志，避免旧记录影响当前测试。
         db.execute(delete(AuditLog))
+        db.execute(delete(Student))
         db.execute(delete(Organization))
         db.execute(delete(Customer))
         db.execute(delete(User))

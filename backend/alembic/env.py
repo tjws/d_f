@@ -13,9 +13,13 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db.base import Base
 from app.models.audit_log import AuditLog
+from app.models.chat_message import ChatMessage
 from app.models.customer import Customer
+from app.models.integration_event import IntegrationEvent
 from app.models.organization import Organization
 from app.models.role_permission import RolePermission
+from app.models.student import Student
+from app.models.timeline_event import TimelineEvent
 from app.models.user import User
 
 # this is the Alembic Config object, which provides
