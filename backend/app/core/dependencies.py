@@ -1,3 +1,6 @@
+import os
+from collections.abc import Callable
+
 import jwt
 from fastapi import Depends, HTTPException, status
 from jwt.exceptions import InvalidTokenError
@@ -7,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.core.security import ALGORITHM, SECRET_KEY, oauth2_scheme
 from app.db.session import get_db
 from app.models.user import User
-from collections.abc import Callable
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -42,6 +44,25 @@ def get_current_user(
 
     if user is None or not user.is_active:
         raise credentials_exception
+
+    return user
+
+
+def get_dev_user(
+    db: Session = Depends(get_db),
+) -> User:
+    """仅供本地开发测试使用的固定用户，不读取请求中的 JWT。"""
+
+    username = os.getenv("APP_DEV_USERNAME", "dev_admin")
+    user = db.scalar(
+        select(User).where(User.username == username)
+    )
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="开发测试用户不存在或已停用",
+        )
 
     return user
 
