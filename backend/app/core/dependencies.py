@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.security import ALGORITHM, SECRET_KEY, oauth2_scheme
 from app.db.session import get_db
 from app.models.user import User
+from app.core.request_context import set_actor_user_id
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -45,6 +46,7 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
 
+    set_actor_user_id(user.id)
     return user
 
 
@@ -64,6 +66,7 @@ def get_dev_user(
             detail="开发测试用户不存在或已停用",
         )
 
+    set_actor_user_id(user.id)
     return user
 
 def require_roles(*allowed_roles: str) -> Callable:

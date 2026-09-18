@@ -1,8 +1,9 @@
 from app.ai.state import CustomerAIState
+from app.ai.providers import get_reply_provider
 
 
 def mock_suggestion_node(state: CustomerAIState) -> dict[str, object]:
-    """根据脱敏上下文生成一条本地回复草稿，不调用外部模型。"""
+    """调用当前 Provider 生成回复草稿，并标记为等待人工确认。"""
 
     context = state.get("context", {})
     customer = context.get("customer")
@@ -14,28 +15,22 @@ def mock_suggestion_node(state: CustomerAIState) -> dict[str, object]:
             "error": "confirmed_profile is required before reply suggestion",
         }
 
-    subject = customer.get("interested_subject") or "当前关注的课程"
-    dimensions = (
-        confirmed_profile.get("dimensions", {})
-        if isinstance(confirmed_profile, dict)
-        else {}
-    )
-    next_action = dimensions.get("next_action") or "进一步了解学习目标"
+    try:
+        payload = get_reply_provider().generate(context)
+    except ValueError as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
 
     suggestion = {
         "suggestion_type": "reply",
-        "content": {
-            "text": (
-                f"您好，结合孩子目前的情况，我们可以先围绕{subject}做一次针对性了解，"
-                f"{next_action}，您看哪个时间方便沟通？"
-            ),
-            "tone": "professional",
-            "purpose": "follow_up",
-        },
-        "evidence_level": "normal",
+        "content": payload["content"],
+        "evidence": payload["evidence"],
+        "evidence_level": payload["evidence_level"],
         "status": "draft",
-        "model_name": "mock-rules",
-        "model_version": "1",
+        "model_name": payload["model_name"],
+        "model_version": payload["model_version"],
         "human_confirmation_required": True,
     }
 

@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 from pathlib import Path
 import sys
+import os
 # 将 backend 加入 Python 搜索路径，
 # 这样 Alembic 才能导入 backend/app 下的代码。
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -26,10 +27,28 @@ from app.models.role_permission import RolePermission
 from app.models.student import Student
 from app.models.timeline_event import TimelineEvent
 from app.models.user import User
+from app.models.ai_workflow_run import AIWorkflowRun
+from app.models.ai_suggestion_feedback import AISuggestionFeedback
+from app.models.customer_transfer import CustomerTransfer
+from app.models.course_order import CourseOrder
+from app.models.service_ticket import ServiceTicket
+from app.models.system_setting import SystemSetting
+from app.models.sales_script import SalesScript
+from app.models.knowledge_document import KnowledgeDocument
+from app.models.knowledge_chunk import KnowledgeChunk
+from app.models.ai_rag_interaction import AIRagInteraction
+from app.models.rag_evaluation_case import RAGEvaluationCase
+from app.models.ai_rollout_membership import AIRolloutMembership
+from app.models.ai_rollout_daily_report import AIRolloutDailyReport
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Docker/生产环境通过环境变量提供数据库地址；本地仍可使用 alembic.ini 的 SQLite 默认值。
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -68,7 +87,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,
+        render_as_batch=url.startswith("sqlite"),
     )
 
     with context.begin_transaction():
@@ -90,7 +109,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, render_as_batch=True, target_metadata=target_metadata
+            connection=connection,
+            render_as_batch=connection.dialect.name == "sqlite",
+            target_metadata=target_metadata,
         )
 
         with context.begin_transaction():

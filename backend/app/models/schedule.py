@@ -23,6 +23,10 @@ class Schedule(Base):
     priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="ai")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="confirmed", index=True)
+    # 完成结果是人工填写的业务事实，不能由 AI 或状态机自动推断。
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    completion_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evidence_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -5,6 +5,7 @@ export interface ChatMessage {
   id: number
   customer_id: number
   user_id: number | null
+  suggestion_id: number | null
   wecom_message_id: string
   direction: ChatMessageDirection
   message_type: ChatMessageType
@@ -17,6 +18,7 @@ export interface ChatMessage {
 
 export interface ChatMessageCreate {
   wecom_message_id: string
+  suggestion_id?: number | null
   direction: ChatMessageDirection
   message_type?: ChatMessageType
   content?: string | null

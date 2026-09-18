@@ -1,0 +1,132 @@
+name: k12-sales-assistant
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-k12_sales}
+      POSTGRES_USER: ${POSTGRES_USER:-k12_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local.env}
+    ports:
+      - "5433:5432"
+    volumes:
+      - k12_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - k12_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  qdrant:
+    # 固定已验证版本，避免 latest 在后续拉取时产生不可预期变化。
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - k12_qdrant_storage:/qdrant/storage
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    environment: &backend_environment
+      APP_ENV: container
+      APP_DEV_AUTH_BYPASS: "0"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-k12_app}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local.env}@postgres:5432/${POSTGRES_DB:-k12_sales}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-k12_knowledge}
+      QDRANT_VECTOR_SIZE: ${QDRANT_VECTOR_SIZE:-1024}
+      RAG_VECTOR_ENABLED: ${RAG_VECTOR_ENABLED:-0}
+      RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-mock}
+      KNOWLEDGE_INDEX_EXECUTION_MODE: ${KNOWLEDGE_INDEX_EXECUTION_MODE:-queue}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in infra/local.env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Set APP_ENCRYPTION_KEY in infra/local.env}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-bailian}
+      AI_DAILY_BAILIAN_REQUEST_LIMIT: ${AI_DAILY_BAILIAN_REQUEST_LIMIT:-20}
+      AI_WORKFLOW_MAX_ATTEMPTS: ${AI_WORKFLOW_MAX_ATTEMPTS:-3}
+      WECOM_CALLBACK_TOKEN: ${WECOM_CALLBACK_TOKEN:-local-mock-callback-token}
+      AI_WORKFLOW_EXECUTION_MODE: queue
+      DATA_RETENTION_AUTO_DELETE: ${DATA_RETENTION_AUTO_DELETE:-0}
+      DATA_RETENTION_CHAT_MESSAGES_DAYS: ${DATA_RETENTION_CHAT_MESSAGES_DAYS:-730}
+      DATA_RETENTION_AI_FEEDBACK_DAYS: ${DATA_RETENTION_AI_FEEDBACK_DAYS:-1095}
+      DATA_RETENTION_CUSTOMERS_DAYS: ${DATA_RETENTION_CUSTOMERS_DAYS:-3650}
+      DATA_RETENTION_AUDIT_LOGS_DAYS: ${DATA_RETENTION_AUDIT_LOGS_DAYS:-3650}
+      BACKUP_DIRECTORY: /app/backend/backups
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-24}
+      BACKUP_PRUNE_ENABLED: ${BACKUP_PRUNE_ENABLED:-0}
+    # 镜像工作目录是 /app/backend，而 alembic.ini 位于仓库根 /app。
+    command: ["python", "-m", "alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    environment:
+      <<: *backend_environment
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/backups:/app/backend/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    profiles: ["app"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    environment:
+      <<: *backend_environment
+    command: ["dramatiq", "app.workers.ai_workflow_tasks", "--processes", "1", "--threads", "2"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    profiles: ["app"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/frontend.Dockerfile
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    profiles: ["app"]
+
+volumes:
+  k12_postgres_data:
+  k12_redis_data:
+  k12_qdrant_storage:
+    external: true
+    name: k12_qdrant_storage

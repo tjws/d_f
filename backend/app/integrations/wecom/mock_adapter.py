@@ -2,6 +2,7 @@ from app.integrations.wecom.adapter import (
     WeComAdapter,
     WeComUserIdentity,
 )
+from datetime import datetime, timezone
 
 
 class MockWeComAdapter:
@@ -31,3 +32,15 @@ class MockWeComAdapter:
             raise ValueError("无效的模拟授权码")
 
         return identity
+
+    def send_message(self, userid: str, content: str) -> str:
+        """仅生成可追踪的 Mock 编号，不访问外部网络。"""
+        if not userid or not content.strip():
+            raise ValueError("Mock 消息需要 userid 和 content")
+        return f"mock-out-{userid}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+
+    def create_calendar_event(self, userid: str, title: str, start_at: str) -> str:
+        """仅返回本地日历编号，正式日程仍由人工确认后写入数据库。"""
+        if not userid or not title.strip() or not start_at.strip():
+            raise ValueError("Mock 日历需要 userid、title 和 start_at")
+        return f"mock-calendar-{userid}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"

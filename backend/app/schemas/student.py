@@ -15,6 +15,15 @@ class StudentCreate(BaseModel):
     subjects: dict[str, Any] | None = None
 
 
+class StudentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    gender: str | None = Field(default=None, max_length=30)
+    grade: str | None = Field(default=None, max_length=30)
+    school: str | None = Field(default=None, max_length=200)
+    birth_date: date | None = None
+    subjects: dict[str, Any] | None = None
+
+
 class StudentRead(BaseModel):
     """学生响应只暴露业务字段，不暴露数据库密文。"""
 
@@ -28,5 +37,6 @@ class StudentRead(BaseModel):
     subjects: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+    archived_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)

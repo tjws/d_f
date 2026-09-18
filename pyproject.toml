@@ -14,6 +14,11 @@ dependencies = [
     "python-multipart>=0.0.9,<1.0",
     "cryptography>=43,<47",
     "langgraph==1.2.11",
+    "openai>=2.50,<3",
+    "psycopg[binary]>=3.2,<4",
+    "redis>=5,<7",
+    "dramatiq[redis]>=1.17,<3",
+    "qdrant-client>=1.14,<2",
 ]
 
 [dependency-groups]

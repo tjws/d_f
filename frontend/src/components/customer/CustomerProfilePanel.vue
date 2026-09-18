@@ -4,6 +4,8 @@ import type {
   CustomerProfile,
   CustomerProfileUpdate,
 } from '../../types/customerProfile'
+import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
+import AIModelMeta from '../ai/AIModelMeta.vue'
 
 const props = defineProps<{
   profile: CustomerProfile | null
@@ -19,6 +21,12 @@ const emit = defineEmits<{
 
 const dimensionsText = ref('{}')
 const editError = ref('')
+const profileStatusLabels: Record<string, string> = {
+  draft: '草稿待确认',
+  confirmed: '已确认',
+  rejected: '已拒绝',
+  archived: '已归档',
+}
 
 watch(
   () => props.profile,
@@ -65,8 +73,16 @@ function saveEdit(): void {
     <template v-else>
       <div class="status-row">
         <span>版本 {{ props.profile.version }}</span>
-        <strong>{{ props.profile.status }}</strong>
+        <strong>{{ profileStatusLabels[props.profile.status] ?? props.profile.status }}</strong>
       </div>
+
+      <AIModelMeta
+        :meta="{
+          model_name: props.profile.model_name,
+          model_version: props.profile.model_version,
+          created_at: props.profile.created_at,
+        }"
+      />
 
       <textarea v-model="dimensionsText" rows="9" />
 
@@ -92,10 +108,7 @@ function saveEdit(): void {
         </button>
       </div>
 
-      <details>
-        <summary>查看证据</summary>
-        <pre>{{ JSON.stringify(props.profile.evidence, null, 2) }}</pre>
-      </details>
+      <AIEvidencePanel :evidence="props.profile.evidence" />
     </template>
   </section>
 </template>
@@ -171,17 +184,4 @@ button:disabled {
   color: #dc2626;
 }
 
-details {
-  margin-top: 16px;
-}
-
-pre {
-  max-height: 180px;
-  overflow: auto;
-  padding: 12px;
-  border-radius: 8px;
-  background: #f8fafc;
-  font-size: 12px;
-  white-space: pre-wrap;
-}
 </style>

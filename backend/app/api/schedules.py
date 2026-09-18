@@ -5,7 +5,7 @@ from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.ai_suggestion import AISuggestionRead, AISuggestionUpdate
-from app.schemas.schedule import ScheduleRead, ScheduleUpdate
+from app.schemas.schedule import ScheduleCompletion, ScheduleRead, ScheduleUpdate
 from app.services.schedule_service import change_schedule_status, confirm_schedule_suggestion, edit_schedule_suggestion, generate_schedule_suggestion, list_schedule_suggestions, list_schedules, update_schedule
 
 router = APIRouter(prefix="/customers/{customer_id}", tags=["schedules"])
@@ -42,8 +42,8 @@ def edit_schedule(customer_id: int, schedule_id: int, payload: ScheduleUpdate, c
 
 
 @router.post("/schedules/{schedule_id}/complete", response_model=ScheduleRead)
-def complete_schedule(customer_id: int, schedule_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _read_schedule(change_schedule_status(db, customer_id, schedule_id, current_user, "completed"))
+def complete_schedule(customer_id: int, schedule_id: int, payload: ScheduleCompletion | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _read_schedule(change_schedule_status(db, customer_id, schedule_id, current_user, "completed", payload))
 
 
 @router.post("/schedules/{schedule_id}/cancel", response_model=ScheduleRead)
@@ -52,7 +52,7 @@ def cancel_schedule(customer_id: int, schedule_id: int, current_user: User = Dep
 
 
 def _read_schedule(schedule) -> ScheduleRead:
-    return ScheduleRead(id=schedule.id, customer_id=schedule.customer_id, user_id=schedule.user_id, suggestion_id=schedule.suggestion_id, title=schedule.title, description=schedule.description, due_at=schedule.due_at, priority=schedule.priority, source=schedule.source, status=schedule.status, evidence=schedule.evidence_json, confirmed_by=schedule.confirmed_by, confirmed_at=schedule.confirmed_at, wecom_calendar_id=schedule.wecom_calendar_id, created_at=schedule.created_at, updated_at=schedule.updated_at)
+    return ScheduleRead(id=schedule.id, customer_id=schedule.customer_id, user_id=schedule.user_id, suggestion_id=schedule.suggestion_id, title=schedule.title, description=schedule.description, due_at=schedule.due_at, priority=schedule.priority, source=schedule.source, status=schedule.status, outcome=schedule.outcome, completion_note=schedule.completion_note, completed_at=schedule.completed_at, evidence=schedule.evidence_json, confirmed_by=schedule.confirmed_by, confirmed_at=schedule.confirmed_at, wecom_calendar_id=schedule.wecom_calendar_id, created_at=schedule.created_at, updated_at=schedule.updated_at)
 
 
 def _read_suggestion(suggestion) -> AISuggestionRead:

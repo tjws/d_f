@@ -111,6 +111,41 @@ def test_create_and_list_students(auth_headers):
     assert list_response.json()[0]["name"] == "小明"
 
 
+def test_update_archive_and_restore_student(auth_headers):
+    customer_id = _create_customer(auth_headers)
+    created = client.post(
+        f"/customers/{customer_id}/students",
+        headers=auth_headers,
+        json={"name": "小红", "grade": "六年级", "school": "实验小学"},
+    )
+    student_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/customers/{customer_id}/students/{student_id}",
+        headers=auth_headers,
+        json={"name": "小红（已更新）", "grade": "初一"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "小红（已更新）"
+    assert updated.json()["grade"] == "初一"
+
+    archived = client.post(
+        f"/customers/{customer_id}/students/{student_id}/archive",
+        headers=auth_headers,
+    )
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"] is not None
+    assert client.get(f"/customers/{customer_id}/students", headers=auth_headers).json() == []
+
+    restored = client.post(
+        f"/customers/{customer_id}/students/{student_id}/restore",
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200
+    assert restored.json()["archived_at"] is None
+    assert client.get(f"/customers/{customer_id}/students", headers=auth_headers).json()[0]["name"] == "小红（已更新）"
+
+
 def test_student_endpoints_require_authentication():
     response = client.get("/customers/1/students")
 

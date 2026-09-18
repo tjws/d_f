@@ -20,6 +20,7 @@ class ChatMessageCreate(BaseModel):
     """本地 Mock 消息入口允许提交的字段。"""
 
     wecom_message_id: str = Field(min_length=1, max_length=200)
+    suggestion_id: int | None = Field(default=None, ge=1)
     direction: ChatMessageDirection
     message_type: ChatMessageType = ChatMessageType.TEXT
     content: str | None = Field(default=None, max_length=10000)
@@ -37,6 +38,7 @@ class ChatMessageRead(BaseModel):
     id: int
     customer_id: int
     user_id: int | None
+    suggestion_id: int | None
     wecom_message_id: str
     direction: ChatMessageDirection
     message_type: ChatMessageType

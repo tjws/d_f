@@ -1,3 +1,5 @@
+import type { AIEvidence } from './ai'
+
 export type CustomerProfileStatus =
   | 'draft'
   | 'confirmed'
@@ -10,7 +12,7 @@ export interface CustomerProfile {
   version: number
   status: CustomerProfileStatus
   dimensions: Record<string, unknown>
-  evidence: Array<Record<string, unknown>>
+  evidence: AIEvidence[]
   model_name: string
   model_version: string
   prompt_version: string

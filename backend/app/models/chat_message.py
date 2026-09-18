@@ -36,6 +36,13 @@ class ChatMessage(Base):
         index=True,
     )
 
+    # 可选关联人工审核过的 AI 回复建议，用于追踪“建议 -> 实际发送消息”。
+    suggestion_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_suggestions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # 企业微信消息编号用于幂等，避免回调重试产生重复消息。
     wecom_message_id: Mapped[str] = mapped_column(
         String(200),

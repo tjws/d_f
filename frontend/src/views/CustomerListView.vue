@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import { listCustomers } from '../api/customers'
 import type { Customer } from '../types/customer'
 import CustomerCreateForm from '../components/customer/CustomerCreateForm.vue'
 
 const customers = ref<Customer[]>([])
-const loading = ref(false)
+const loading = ref(true)
 const errorMessage = ref('')
 const showCreateForm = ref(false)
+const total = ref(0)
+const route = useRoute()
 
 const stageLabels: Record<Customer['stage'], string> = {
   new: '新客户',
@@ -16,6 +18,22 @@ const stageLabels: Record<Customer['stage'], string> = {
   converted: '已转化',
   lost: '已流失',
 }
+
+const stageOptions: Array<{ value: Customer['stage']; label: string }> = [
+  { value: 'new', label: '新客户' },
+  { value: 'following_up', label: '跟进中' },
+  { value: 'converted', label: '已转化' },
+  { value: 'lost', label: '已流失' },
+]
+
+function stageFromQuery(value: unknown): Customer['stage'] | undefined {
+  const candidate = Array.isArray(value) ? value[0] : value
+  return stageOptions.some((option) => option.value === candidate)
+    ? candidate as Customer['stage']
+    : undefined
+}
+
+const selectedStage = ref<Customer['stage'] | undefined>(stageFromQuery(route.query.stage))
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -33,9 +51,11 @@ async function loadCustomers(): Promise<void> {
     const response = await listCustomers({
       page: 1,
       page_size: 20,
+      stage: selectedStage.value,
     })
 
     customers.value = response.items
+    total.value = response.total
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : '客户列表加载失败'
@@ -50,6 +70,11 @@ async function handleCustomerCreated(): Promise<void> {
 }
 
 onMounted(loadCustomers)
+
+watch(() => route.query.stage, (value) => {
+  selectedStage.value = stageFromQuery(value)
+  void loadCustomers()
+})
 </script>
 
 <template>
@@ -59,7 +84,7 @@ onMounted(loadCustomers)
         <p class="eyebrow">Customer Workspace</p>
         <h1>客户列表</h1>
         <p class="description">
-          当前页面从 FastAPI customers API 读取客户数据。
+          浏览、筛选并进入客户工作台；客户数据与访问范围由后端统一校验。
         </p>
       </div>
 
@@ -77,6 +102,22 @@ onMounted(loadCustomers)
         </button>
       </div>
     </header>
+
+    <nav class="stage-filters" aria-label="客户阶段筛选">
+      <RouterLink :to="{ name: 'customers' }" :class="{ active: !selectedStage }">全部客户</RouterLink>
+      <RouterLink
+        v-for="option in stageOptions"
+        :key="option.value"
+        :to="{ name: 'customers', query: { stage: option.value } }"
+        :class="{ active: selectedStage === option.value }"
+      >
+        {{ option.label }}
+      </RouterLink>
+    </nav>
+
+    <p v-if="!loading && !errorMessage" class="result-summary">
+      {{ selectedStage ? stageLabels[selectedStage] : '全部' }}：{{ total }} 个客户
+    </p>
 
     <CustomerCreateForm
       v-if="showCreateForm"
@@ -108,7 +149,7 @@ onMounted(loadCustomers)
         </div>
 
         <div class="customer-meta">
-          <span class="stage">
+          <span class="stage" :class="customer.stage">
             {{ stageLabels[customer.stage] }}
           </span>
           <span>
@@ -123,9 +164,9 @@ onMounted(loadCustomers)
 <style scoped>
 .customer-page {
   min-height: 100vh;
-  padding: 48px 8vw;
+  padding: 48px 6vw 72px;
   color: #1f2937;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #eef5ff 0, #f8fbff 320px);
 }
 
 .page-header {
@@ -133,7 +174,7 @@ onMounted(loadCustomers)
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto 32px;
 }
 
@@ -148,7 +189,7 @@ onMounted(loadCustomers)
 
 h1 {
   margin: 0;
-  font-size: 40px;
+  font-size: clamp(32px, 5vw, 46px);
 }
 
 .description {
@@ -158,6 +199,37 @@ h1 {
 .header-actions {
   display: flex;
   gap: 12px;
+}
+
+.stage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 960px;
+  margin: 0 auto 10px;
+}
+
+.stage-filters a {
+  padding: 8px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #475569;
+  background: #fff;
+  text-decoration: none;
+}
+
+.stage-filters a:hover,
+.stage-filters a.active {
+  border-color: #2563eb;
+  color: #fff;
+  background: #2563eb;
+}
+
+.result-summary {
+  max-width: 960px;
+  margin: 0 auto 14px;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .create-button,
@@ -170,11 +242,12 @@ h1 {
 }
 
 .create-button {
-  background: #16a34a;
+  background: linear-gradient(135deg, #2563eb, #4338ca);
 }
 
 .refresh-button {
-  background: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .customer-list {
@@ -194,7 +267,11 @@ h1 {
   background: white;
   color: inherit;
   text-decoration: none;
+  box-shadow: 0 8px 24px rgb(30 64 175 / 5%);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
+
+.customer-card:hover { transform: translateY(-2px); border-color: #93c5fd; box-shadow: 0 14px 30px rgb(30 64 175 / 11%); }
 
 .customer-card h2 {
   margin: 0 0 6px;
@@ -221,6 +298,10 @@ h1 {
   color: #1d4ed8;
   background: #dbeafe;
 }
+
+.stage.following_up { color: #9a5b00; background: #fff3cd; }
+.stage.converted { color: #087443; background: #d9fbe7; }
+.stage.lost { color: #7a4b62; background: #f6e8ef; }
 
 .state-message {
   max-width: 960px;

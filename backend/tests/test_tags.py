@@ -2,7 +2,7 @@ import base64
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.db.session import SessionLocal
 from app.main import app
@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.customer import Customer
 from app.models.customer_profile import CustomerProfile
 from app.models.customer_tag import CustomerTag
+from app.models.ai_suggestion_feedback import AISuggestionFeedback
 from app.models.organization import Organization
 from app.models.student import Student
 from app.models.tag import Tag
@@ -56,8 +57,19 @@ def _create_customer(headers: dict[str, str]) -> int:
     return response.json()["id"]
 
 
+def _confirm_profile(headers: dict[str, str], customer_id: int) -> None:
+    draft = client.post(f"/customers/{customer_id}/profiles/draft", headers=headers)
+    assert draft.status_code == 201
+    confirmed = client.post(
+        f"/customers/{customer_id}/profiles/{draft.json()['id']}/confirm",
+        headers=headers,
+    )
+    assert confirmed.status_code == 200
+
+
 def test_tag_suggestions_need_human_confirmation(auth_headers):
     customer_id = _create_customer(auth_headers)
+    _confirm_profile(auth_headers, customer_id)
     generated = client.post(f"/customers/{customer_id}/tags/suggestions", headers=auth_headers)
     assert generated.status_code == 200
     suggestions = generated.json()
@@ -74,9 +86,24 @@ def test_tag_suggestions_need_human_confirmation(auth_headers):
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
 
+    with SessionLocal() as db:
+        feedback = db.scalars(select(AISuggestionFeedback).where(AISuggestionFeedback.customer_id == customer_id)).all()
+        tag_feedback = {
+            (item.target_type, item.action)
+            for item in feedback
+            if item.target_type == "tag"
+        }
+        assert tag_feedback == {("tag", "accepted"), ("tag", "rejected")}
+
     repeated = client.post(f"/customers/{customer_id}/tags/suggestions", headers=auth_headers)
     assert repeated.status_code == 200
     assert any(item["status"] == "confirmed" for item in repeated.json())
+
+
+def test_tag_suggestions_require_confirmed_profile(auth_headers):
+    customer_id = _create_customer(auth_headers)
+    response = client.post(f"/customers/{customer_id}/tags/suggestions", headers=auth_headers)
+    assert response.status_code == 409
 
 
 def test_tag_catalog_and_customer_tags_require_authentication():

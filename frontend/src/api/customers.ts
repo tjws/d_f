@@ -6,6 +6,7 @@ import type {
   CustomerStage,
   CustomerUpdate,
 } from '../types/customer'
+import type { CustomerTransfer } from '../types/customerTransfer'
 
 export interface CustomerListParams {
   page?: number
@@ -58,4 +59,15 @@ export function deleteCustomer(customerId: number): Promise<void> {
   return apiRequest<void>(`/customers/${customerId}`, {
     method: 'DELETE',
   })
+}
+
+export function transferCustomer(customerId: number, toUserId: number, reason?: string): Promise<Customer> {
+  return apiRequest<Customer>(`/customers/${customerId}/owner`, {
+    method: 'PATCH',
+    body: JSON.stringify({ to_user_id: toUserId, reason: reason?.trim() || null }),
+  })
+}
+
+export function listCustomerTransfers(customerId: number): Promise<CustomerTransfer[]> {
+  return apiRequest<CustomerTransfer[]>(`/customers/${customerId}/transfers`)
 }

@@ -19,3 +19,9 @@ class WeComAdapter(Protocol):
         code: str,
     ) -> WeComUserIdentity:
         """用授权码换取企业微信用户身份。"""
+
+    def send_message(self, userid: str, content: str) -> str:
+        """发送消息；返回外部消息编号。"""
+
+    def create_calendar_event(self, userid: str, title: str, start_at: str) -> str:
+        """创建日历事件；真实适配器以后实现。"""

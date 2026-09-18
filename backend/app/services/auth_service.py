@@ -33,7 +33,7 @@ def issue_local_token(db: Session, username: str, password: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误", headers={"WWW-Authenticate": "Bearer"})
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已被停用")
-    return {"access_token": create_access_token(subject=user.username), "token_type": "bearer"}
+    return {"access_token": create_access_token(subject=user.username), "token_type": "bearer", "role": user.role}
 
 
 def issue_wecom_token(db: Session, userid: str, username: str, full_name: str) -> dict:
@@ -51,4 +51,4 @@ def issue_wecom_token(db: Session, userid: str, username: str, full_name: str) -
         db.refresh(user)
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="本地用户已被停用")
-    return {"access_token": create_access_token(subject=user.username), "token_type": "bearer"}
+    return {"access_token": create_access_token(subject=user.username), "token_type": "bearer", "role": user.role}

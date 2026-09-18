@@ -91,11 +91,15 @@ def test_schedule_suggestion_becomes_schedule_only_after_confirmation(auth_heade
     assert timeline.status_code == 200
     assert any(item["event_type"] == "schedule_created" for item in timeline.json())
 
-    completed = client.post(f"/customers/{customer_id}/schedules/{schedule['id']}/complete", headers=auth_headers)
+    completed = client.post(f"/customers/{customer_id}/schedules/{schedule['id']}/complete", headers=auth_headers, json={"outcome": "appointment", "completion_note": "家长约好周末试听"})
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
+    assert completed.json()["outcome"] == "appointment"
+    assert completed.json()["completion_note"] == "家长约好周末试听"
     cancelled = client.post(f"/customers/{customer_id}/schedules/{schedule['id']}/cancel", headers=auth_headers)
     assert cancelled.status_code == 409
+    timeline_after_completion = client.get(f"/customers/{customer_id}/timeline-events", headers=auth_headers)
+    assert any(item["event_type"] == "schedule_completed" for item in timeline_after_completion.json())
 
 
 def test_schedule_suggestion_requires_confirmed_profile(auth_headers):

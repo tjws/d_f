@@ -3,11 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
+from app.dao.ai_suggestion_dao import AISuggestionDAO
 from app.models.user import User
 from app.schemas.ai_suggestion import AISuggestionRead, AISuggestionUpdate
 from app.services.ai_suggestion_service import accept_suggestion, edit_suggestion, generate_reply_draft, list_suggestions, reject_suggestion
+from app.services.ai_suggestion_feedback_service import feedback_dao
+from app.schemas.ai_suggestion_feedback import AISuggestionFeedbackRead
 
 router = APIRouter(prefix="/customers/{customer_id}/suggestions", tags=["ai-suggestions"])
+suggestion_dao = AISuggestionDAO()
 
 
 def _read(suggestion) -> AISuggestionRead:
@@ -37,3 +41,19 @@ def accept_reply_suggestion(customer_id: int, suggestion_id: int, current_user: 
 @router.post("/{suggestion_id}/reject", response_model=AISuggestionRead)
 def reject_reply_suggestion(customer_id: int, suggestion_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _read(reject_suggestion(db, customer_id, suggestion_id, current_user))
+
+
+@router.get("/{suggestion_id}/feedback", response_model=AISuggestionFeedbackRead)
+def get_suggestion_feedback(customer_id: int, suggestion_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 先通过建议列表查询校验客户归属和数据权限，再返回反馈。
+    suggestion = suggestion_dao.get_by_id(db, customer_id, suggestion_id)
+    if suggestion is None:
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 建议不存在")
+    from app.services.customer_service import get_customer_or_404
+    get_customer_or_404(db, customer_id, current_user, "read")
+    feedback = feedback_dao.get_by_suggestion(db, suggestion_id)
+    if feedback is None:
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该建议尚无人工反馈")
+    return feedback

@@ -1,3 +1,5 @@
+import type { AIEvidence } from './ai'
+
 export type AISuggestionStatus =
   | 'draft'
   | 'edited'
@@ -13,7 +15,7 @@ export interface AISuggestion {
   suggestion_type: string
   content: Record<string, unknown>
   edited_content: Record<string, unknown> | null
-  evidence: Array<Record<string, unknown>>
+  evidence: AIEvidence[]
   evidence_level: string
   status: AISuggestionStatus
   model_name: string

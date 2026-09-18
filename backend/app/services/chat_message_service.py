@@ -8,9 +8,12 @@ from app.core.crypto import decrypt_text, encrypt_text
 from app.dao.chat_message_dao import ChatMessageDAO
 from app.dao.timeline_event_dao import TimelineEventDAO
 from app.models.chat_message import ChatMessage
+from app.models.ai_suggestion import AISuggestion
 from app.models.timeline_event import TimelineEvent
 from app.models.user import User
 from app.schemas.chat_message import ChatMessageCreate
+from app.services.ai_suggestion_feedback_service import record_feedback
+from app.services.audit_log_service import append_audit_log
 
 
 class ChatMessageConflict(ValueError):
@@ -40,6 +43,7 @@ def to_chat_message_read(message: ChatMessage):
         id=message.id,
         customer_id=message.customer_id,
         user_id=message.user_id,
+        suggestion_id=message.suggestion_id,
         wecom_message_id=message.wecom_message_id,
         direction=message.direction,
         message_type=message.message_type,
@@ -76,9 +80,20 @@ def create_chat_message(
         else None
     )
 
+    suggestion = None
+    if payload.suggestion_id is not None:
+        if payload.direction.value != "outbound":
+            raise ChatMessageConflict("AI suggestion links are only valid for outbound messages")
+        suggestion = db.get(AISuggestion, payload.suggestion_id)
+        if suggestion is None or suggestion.customer_id != customer_id:
+            raise ChatMessageConflict("AI suggestion does not belong to this customer")
+        if suggestion.suggestion_type != "reply" or suggestion.status != "accepted":
+            raise ChatMessageConflict("Only an accepted reply suggestion can be sent")
+
     message = ChatMessage(
         customer_id=customer_id,
         user_id=current_user.id,
+        suggestion_id=payload.suggestion_id,
         wecom_message_id=payload.wecom_message_id,
         direction=payload.direction.value,
         message_type=payload.message_type.value,
@@ -107,6 +122,20 @@ def create_chat_message(
             reference_type="chat_message",
             reference_id=str(message.id),
         ))
+
+    if suggestion is not None:
+        reviewed_content = suggestion.edited_content_json or suggestion.content_json
+        sent_content = {"text": payload.content}
+        if reviewed_content != sent_content:
+            record_feedback(db, suggestion, current_user, "edited", sent_content)
+        append_audit_log(
+            db,
+            current_user,
+            "customer.ai_reply_sent",
+            "ai_suggestion",
+            str(suggestion.id),
+            {"sent": True, "edited_before_send": reviewed_content != sent_content},
+        )
 
     try:
         db.commit()

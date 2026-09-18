@@ -1,5 +1,6 @@
 import base64
 import json
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -636,3 +637,75 @@ def test_mock_callback_does_not_overwrite_existing_permissions(monkeypatch):
         assert user.role == "manager"
         assert user.organization_id == organization_id
         assert user.full_name == "更新后的经理名称"
+
+def test_local_mock_emitter_uses_authenticated_identity_and_customer_scope(monkeypatch):
+    """The browser cannot forge the actor identity or bypass customer ownership."""
+
+    token = "local-callback-token"
+    monkeypatch.setenv("WECOM_MODE", "mock")
+    monkeypatch.setenv("WECOM_CALLBACK_TOKEN", token)
+
+    suffix = uuid4().hex[:10]
+    username = f"local_emit_{suffix}"
+    event_id = f"local-event-{suffix}"
+    message_id = f"local-message-{suffix}"
+
+    register_response = client.post(
+        "/auth/register",
+        json={"username": username, "password": "Test123!"},
+    )
+    assert register_response.status_code == 201
+    token_response = client.post(
+        "/auth/token",
+        data={"username": username, "password": "Test123!"},
+    )
+    assert token_response.status_code == 200
+    headers = {"Authorization": f"Bearer {token_response.json()['access_token']}"}
+
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == username))
+        assert user is not None
+        customer = Customer(
+            owner_id=user.id,
+            name=f"Local emit {suffix}",
+            phone=f"139{suffix[:8]}",
+        )
+        db.add(customer)
+        db.commit()
+        customer_id = customer.id
+
+    payload = {
+        "event_id": event_id,
+        "event_type": "chat_message",
+        "userid": "forged-browser-user",
+        "customer_id": customer_id,
+        "wecom_message_id": message_id,
+        "direction": "inbound",
+        "message_type": "text",
+        "content": "Parent asks about a trial lesson.",
+    }
+    response = client.post("/wecom/mock/emit", json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+
+    with SessionLocal() as db:
+        message = db.scalar(
+            select(ChatMessage).where(ChatMessage.wecom_message_id == message_id)
+        )
+        event = db.scalar(
+            select(IntegrationEvent).where(
+                IntegrationEvent.external_event_id == event_id
+            )
+        )
+        user = db.scalar(select(User).where(User.username == username))
+        assert message is not None
+        assert event is not None
+        assert user is not None
+        assert user.wecom_userid == f"mock-{username}"
+
+        db.execute(delete(TimelineEvent).where(TimelineEvent.reference_id == message_id))
+        db.execute(delete(ChatMessage).where(ChatMessage.wecom_message_id == message_id))
+        db.execute(delete(IntegrationEvent).where(IntegrationEvent.external_event_id == event_id))
+        db.execute(delete(Customer).where(Customer.id == customer_id))
+        db.execute(delete(User).where(User.username == username))
+        db.commit()

@@ -10,6 +10,7 @@ from app.db.session import SessionLocal
 from app.models.chat_message import ChatMessage
 from app.models.customer import Customer
 from app.models.customer_profile import CustomerProfile
+from app.models.schedule import Schedule
 from app.models.timeline_event import TimelineEvent
 
 
@@ -75,6 +76,18 @@ def context_customer_id():
                 source="wecom",
             )
         )
+        db.add(
+            Schedule(
+                customer_id=customer.id,
+                title="试听确认回访",
+                due_at=datetime.now(timezone.utc),
+                status="completed",
+                outcome="appointment",
+                completion_note="家长电话 13800138000，已约好周末试听",
+                completed_at=datetime.now(timezone.utc),
+                evidence_json=[],
+            )
+        )
         db.commit()
         customer_id = customer.id
 
@@ -97,6 +110,15 @@ def test_context_builder_masks_sensitive_data_and_uses_confirmed_profile(
     }
     assert context["messages"][0]["content"] == "原始手机号 139****9000"
     assert context["timeline_events"][0]["summary"] == "家长咨询数学课程"
+    assert context["completed_follow_ups"] == [
+        {
+            "id": context["completed_follow_ups"][0]["id"],
+            "title": "试听确认回访",
+            "outcome": "appointment",
+            "completion_note": "家长电话 138****8000，已约好周末试听",
+            "completed_at": context["completed_follow_ups"][0]["completed_at"],
+        }
+    ]
 
 
 def test_context_builder_rejects_unknown_customer():

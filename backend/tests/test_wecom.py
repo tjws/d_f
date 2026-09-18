@@ -28,6 +28,12 @@ def test_mock_adapter_rejects_unknown_code():
         adapter.exchange_code_for_user("unknown-code")
 
 
+def test_mock_adapter_generates_local_message_and_calendar_ids():
+    adapter = MockWeComAdapter()
+    assert adapter.send_message("demo-user-001", "测试").startswith("mock-out-")
+    assert adapter.create_calendar_event("demo-user-001", "试听", "2026-09-20T10:00:00Z").startswith("mock-calendar-")
+
+
 def test_wecom_config_defaults_to_mock(monkeypatch):
     """没有真实账号配置时默认使用 mock。"""
 

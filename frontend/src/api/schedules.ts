@@ -1,6 +1,6 @@
 import { apiRequest } from './http'
 import type { AISuggestion, AISuggestionUpdate } from '../types/aiSuggestion'
-import type { Schedule, ScheduleUpdate } from '../types/schedule'
+import type { Schedule, ScheduleCompletion, ScheduleUpdate } from '../types/schedule'
 
 export function createScheduleSuggestion(
   customerId: number,
@@ -58,10 +58,11 @@ export function updateSchedule(
 export function completeSchedule(
   customerId: number,
   scheduleId: number,
+  payload: ScheduleCompletion = { outcome: 'other' },
 ): Promise<Schedule> {
   return apiRequest<Schedule>(
     `/customers/${customerId}/schedules/${scheduleId}/complete`,
-    { method: 'POST' },
+    { method: 'POST', body: JSON.stringify(payload) },
   )
 }
 

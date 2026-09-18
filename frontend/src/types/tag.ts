@@ -1,3 +1,5 @@
+import type { AIEvidence } from './ai'
+
 export interface Tag {
   id: number
   key: string
@@ -16,7 +18,7 @@ export interface CustomerTag {
   tag: Tag
   source: string
   status: string
-  evidence: Array<Record<string, unknown>>
+  evidence: AIEvidence[]
   created_by: number | null
   confirmed_by: number | null
   created_at: string

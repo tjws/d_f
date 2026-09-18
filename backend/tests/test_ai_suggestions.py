@@ -92,6 +92,22 @@ def test_reply_suggestion_requires_human_acceptance(auth_headers):
     assert accepted_again.status_code == 409
 
 
+def test_reply_suggestion_includes_student_evidence(auth_headers):
+    customer_id = _create_customer(auth_headers)
+    student = client.post(
+        f"/customers/{customer_id}/students",
+        headers=auth_headers,
+        json={"name": "小明", "grade": "初一", "school": "实验中学"},
+    )
+    assert student.status_code == 201
+    _confirm_profile(auth_headers, customer_id)
+
+    generated = client.post(f"/customers/{customer_id}/suggestions/reply-draft", headers=auth_headers)
+    assert generated.status_code == 201
+    evidence_types = {item["source_type"] for item in generated.json()["evidence"]}
+    assert "student" in evidence_types
+
+
 def test_reply_suggestion_requires_confirmed_profile(auth_headers):
     customer_id = _create_customer(auth_headers)
     response = client.post(f"/customers/{customer_id}/suggestions/reply-draft", headers=auth_headers)

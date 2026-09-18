@@ -67,3 +67,10 @@ class Student(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    # 软归档保留历史关系，同时让归档学生不再进入默认 AI 上下文。
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )

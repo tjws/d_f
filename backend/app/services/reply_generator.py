@@ -1,19 +1,62 @@
 from typing import Any
 
+from app.ai.providers import get_reply_provider
 from app.models.chat_message import ChatMessage
 from app.models.customer import Customer
 from app.models.customer_profile import CustomerProfile
 from app.models.timeline_event import TimelineEvent
+from app.models.student import Student
+from app.knowledge.policy import retrieve_knowledge
 
 
-def generate_mock_reply(customer: Customer, profile: CustomerProfile, messages: list[ChatMessage], events: list[TimelineEvent]) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
-    """生成可预测的回复草稿，后续真实模型只需替换这个生成器。"""
-    dimensions = profile.dimensions_json
-    subject = customer.interested_subject or "目前关注的课程"
-    next_action = dimensions.get("next_action") or "进一步了解孩子的学习目标"
-    text = f"您好，结合孩子目前的情况，我们可以先围绕{subject}做一次针对性了解。{next_action}，您看哪个时间方便沟通？"
-    evidence = [{"source_type": "customer_profile", "source_id": str(profile.id), "fact": "使用已确认客户画像"}]
-    evidence.extend({"source_type": "chat_message", "source_id": str(message.id), "fact": "使用最近聊天消息"} for message in messages[:5])
-    evidence.extend({"source_type": "timeline_event", "source_id": str(event.id), "fact": "使用最近跟进事件"} for event in events[:5])
-    level = "sufficient" if messages or events else "normal"
-    return {"text": text, "tone": "professional", "purpose": "follow_up"}, evidence, level
+def generate_mock_reply(
+    customer: Customer,
+    profile: CustomerProfile,
+    messages: list[ChatMessage],
+    events: list[TimelineEvent],
+    students: list[Student] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str, str, str]:
+    """保留旧服务函数签名，并委托给统一的 MockReplyProvider。"""
+
+    # 旧的 reply-draft API 和 LangGraph 使用同一份 Provider 逻辑，避免输出分叉。
+    latest_inbound = next(
+        (
+            getattr(message, "content_masked", "")
+            for message in reversed(messages)
+            if getattr(message, "direction", None) == "inbound"
+        ),
+        "",
+    )
+    knowledge_result = retrieve_knowledge(latest_inbound, limit=4)
+    payload = get_reply_provider().generate(
+        {
+            "customer": {
+                "interested_subject": customer.interested_subject,
+            },
+            "confirmed_profile": {
+                "id": profile.id,
+                "dimensions": profile.dimensions_json,
+            },
+            "messages": [{"id": message.id} for message in messages],
+            "timeline_events": [{"id": event.id} for event in events],
+            "students": [{"id": student.id} for student in (students or [])],
+            "knowledge": [
+                {"document_id": item.document_id, "title": item.title, "snippet": item.content[:700], "score": item.score}
+                for item in knowledge_result.hits
+            ],
+            "knowledge_policy": {
+                "query": knowledge_result.query,
+                "matched": knowledge_result.matched,
+                "retrieval_mode": knowledge_result.retrieval_mode,
+                "threshold": knowledge_result.threshold,
+                "fallback_message": knowledge_result.fallback_message,
+            },
+        }
+    )
+    return (
+        payload["content"],
+        payload["evidence"],
+        payload["evidence_level"],
+        payload["model_name"],
+        payload["model_version"],
+    )

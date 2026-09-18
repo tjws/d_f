@@ -4,6 +4,8 @@ import type {
   AISuggestion,
   AISuggestionUpdate,
 } from '../../types/aiSuggestion'
+import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
+import AIModelMeta from '../ai/AIModelMeta.vue'
 
 const props = defineProps<{
   suggestions: AISuggestion[]
@@ -21,6 +23,13 @@ const currentSuggestion = computed(
   () => props.suggestions[0] ?? null,
 )
 const text = ref('')
+const suggestionStatusLabels: Record<string, string> = {
+  draft: '草稿待审阅',
+  edited: '已人工编辑',
+  accepted: '已人工接受',
+  rejected: '已拒绝',
+  expired: '已过期',
+}
 
 watch(
   currentSuggestion,
@@ -63,9 +72,18 @@ function saveEdit(): void {
 
     <template v-else>
       <div class="status-row">
-        <span>状态：{{ currentSuggestion.status }}</span>
+        <span>状态：{{ suggestionStatusLabels[currentSuggestion.status] ?? currentSuggestion.status }}</span>
         <span>证据等级：{{ currentSuggestion.evidence_level }}</span>
       </div>
+
+      <AIModelMeta
+        :meta="{
+          model_name: currentSuggestion.model_name,
+          model_version: currentSuggestion.model_version,
+          created_at: currentSuggestion.created_at,
+          evidence_level: currentSuggestion.evidence_level,
+        }"
+      />
 
       <textarea v-model="text" rows="5" />
 
@@ -92,6 +110,8 @@ function saveEdit(): void {
       <p class="human-note">
         接受建议不会自动发送消息，发送动作仍由人工完成。
       </p>
+
+      <AIEvidencePanel :evidence="currentSuggestion.evidence" />
     </template>
   </section>
 </template>

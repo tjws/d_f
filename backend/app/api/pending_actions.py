@@ -1,0 +1,45 @@
+"""当前用户的 AI 待处理工作台接口。"""
+
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_user
+from app.db.session import get_db
+from app.models.user import User
+from app.schemas.pending_action import (
+    PendingActionDecision,
+    PendingActionDecisionRead,
+    PendingActionListRead,
+    PendingActionType,
+)
+from app.services.pending_action_service import list_pending_actions
+from app.services.pending_action_service import review_pending_action
+
+
+router = APIRouter(prefix="/pending-actions", tags=["pending-actions"])
+
+
+@router.get("", response_model=PendingActionListRead)
+def get_pending_actions(
+    action_type: PendingActionType | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """返回当前用户有权处理的 AI 草稿；不执行确认、编辑或发送。"""
+
+    items = list_pending_actions(db, current_user, action_type, limit)
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/{action_type}/{resource_id}/decision", response_model=PendingActionDecisionRead)
+def decide_pending_action(
+    action_type: PendingActionType,
+    resource_id: int,
+    payload: PendingActionDecision,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return review_pending_action(db, current_user, action_type, resource_id, payload)

@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
+from app.core.permissions import require_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.customer import CustomerCreate, CustomerListResponse, CustomerRead, CustomerStage, CustomerUpdate
+from app.schemas.customer_transfer import CustomerTransferCreate, CustomerTransferRead
 from app.services.customer_service import (
     create_customer as create_customer_service,
     customer_scope_filters,
@@ -13,6 +15,7 @@ from app.services.customer_service import (
     list_customers as list_customers_service,
     update_customer as update_customer_service,
 )
+from app.services.customer_transfer_service import list_customer_transfers, transfer_customer
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -51,3 +54,14 @@ def update_customer(customer_id: int, payload: CustomerUpdate, current_user: Use
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_customer(customer_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     delete_customer_service(db, customer_id, current_user)
+
+
+@router.patch("/{customer_id}/owner", response_model=CustomerRead)
+def transfer_customer_owner(customer_id: int, payload: CustomerTransferCreate, current_user: User = Depends(require_permission("customers", "transfer")), db: Session = Depends(get_db)):
+    transfer_customer(db, customer_id, current_user, payload)
+    return get_customer_or_404(db, customer_id, current_user, "read")
+
+
+@router.get("/{customer_id}/transfers", response_model=list[CustomerTransferRead])
+def get_customer_transfer_history(customer_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return list_customer_transfers(db, customer_id, current_user)

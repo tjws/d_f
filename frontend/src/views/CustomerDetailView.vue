@@ -6,6 +6,10 @@ import AISuggestionPanel from '../components/customer/AISuggestionPanel.vue'
 import TagPanel from '../components/customer/TagPanel.vue'
 import SchedulePanel from '../components/customer/SchedulePanel.vue'
 import CommunicationPanel from '../components/customer/CommunicationPanel.vue'
+import StudentPanel from '../components/customer/StudentPanel.vue'
+import CustomerTransferPanel from '../components/customer/CustomerTransferPanel.vue'
+import OrderPanel from '../components/customer/OrderPanel.vue'
+import ServiceTicketPanel from '../components/customer/ServiceTicketPanel.vue'
 import { useCustomerWorkspace } from '../composables/useCustomerWorkspace'
 import type { Customer } from '../types/customer'
 
@@ -21,6 +25,11 @@ const {
   schedules,
   chatMessages,
   timelineEvents,
+  students,
+  archivedStudents,
+  orders,
+  serviceTickets,
+  workflowNotice,
   loading,
   errors,
   loadAll,
@@ -42,6 +51,16 @@ const {
   completeSchedule,
   cancelScheduleItem,
   sendMockMessage,
+  transcribeMessage,
+  addTimelineEvent,
+  createStudent,
+  editStudent,
+  archiveStudentRecord,
+  restoreStudentRecord,
+  createOrder,
+  updateOrder,
+  createServiceTicket,
+  updateServiceTicketStatus,
 } = useCustomerWorkspace(customerId)
 
 const stageLabels: Record<Customer['stage'], string> = {
@@ -84,7 +103,7 @@ watch(customerId, loadAll)
           </div>
           <div class="header-actions">
             <span class="stage">{{ stageLabels[customer.stage] }}</span>
-            <button type="button" class="workflow-button" @click="runWorkflow">
+            <button type="button" class="workflow-button" @click="() => runWorkflow('reply')">
               运行 AI 工作流
             </button>
           </div>
@@ -92,6 +111,9 @@ watch(customerId, loadAll)
 
         <p v-if="errors.workflow" class="workflow-error">
           {{ errors.workflow }}
+        </p>
+        <p v-else-if="workflowNotice" class="workflow-notice">
+          {{ workflowNotice }}
         </p>
 
         <section class="customer-summary">
@@ -114,6 +136,17 @@ watch(customerId, loadAll)
         </section>
 
         <div class="workspace-grid">
+          <StudentPanel
+            :students="students"
+            :archived-students="archivedStudents"
+            :error="errors.students"
+            :saving="loading"
+            @create="createStudent"
+            @update="editStudent"
+            @archive="archiveStudentRecord"
+            @restore="restoreStudentRecord"
+          />
+
           <CustomerProfilePanel
             :profile="latestProfile"
             :error="errors.profiles"
@@ -150,6 +183,22 @@ watch(customerId, loadAll)
             @complete="completeSchedule"
             @cancel="cancelScheduleItem"
           />
+
+          <CustomerTransferPanel :customer="customer" @transferred="loadAll" />
+
+          <OrderPanel
+            :orders="orders"
+            :error="errors.orders"
+            @create="createOrder"
+            @update="updateOrder"
+          />
+
+          <ServiceTicketPanel
+            :tickets="serviceTickets"
+            :error="errors.serviceTickets"
+            @create="createServiceTicket"
+            @update="updateServiceTicketStatus"
+          />
         </div>
 
         <CommunicationPanel
@@ -158,6 +207,8 @@ watch(customerId, loadAll)
           :chat-error="errors.chat"
           :timeline-error="errors.timeline"
           @send-message="sendMockMessage"
+          @transcribe-message="transcribeMessage"
+          @create-timeline-event="addTimelineEvent"
         />
       </template>
     </div>
@@ -167,9 +218,9 @@ watch(customerId, loadAll)
 <style scoped>
 .workspace-page {
   min-height: 100vh;
-  padding: 40px 6vw 64px;
+  padding: 36px 5vw 72px;
   color: #1f2937;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #eef5ff 0, #f8fbff 360px);
 }
 
 .workspace-container {
@@ -182,6 +233,7 @@ watch(customerId, loadAll)
   margin-bottom: 24px;
   color: #2563eb;
   text-decoration: none;
+  font-weight: 600;
 }
 
 .customer-header {
@@ -192,7 +244,8 @@ watch(customerId, loadAll)
   padding: 28px;
   border-radius: 20px;
   color: white;
-  background: linear-gradient(135deg, #1d4ed8, #4338ca);
+  background: linear-gradient(135deg, #1d4ed8, #4338ca 70%, #5b21b6);
+  box-shadow: 0 18px 38px rgb(30 64 175 / 20%);
 }
 
 .eyebrow {
@@ -252,7 +305,8 @@ h1 {
   padding: 16px;
   border-radius: 12px;
   background: white;
-  box-shadow: 0 4px 14px rgb(15 23 42 / 5%);
+  border: 1px solid #e4ebf5;
+  box-shadow: 0 8px 22px rgb(30 64 175 / 5%);
 }
 
 .customer-summary span,
@@ -288,6 +342,11 @@ h1 {
 .workflow-error {
   margin: 12px 0;
   color: #dc2626;
+}
+
+.workflow-notice {
+  margin: 12px 0;
+  color: #166534;
 }
 
 @media (max-width: 900px) {

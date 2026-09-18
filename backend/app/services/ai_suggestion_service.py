@@ -4,21 +4,20 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.dao.ai_suggestion_dao import AISuggestionDAO
-from app.dao.chat_message_dao import ChatMessageDAO
 from app.dao.customer_profile_dao import CustomerProfileDAO
-from app.dao.timeline_event_dao import TimelineEventDAO
 from app.models.ai_suggestion import AISuggestion
 from app.models.user import User
 from app.schemas.ai_suggestion import AISuggestionStatus, AISuggestionUpdate
 from app.services.audit_log_service import append_audit_log
 from app.services.customer_service import get_customer_or_404
-from app.services.reply_generator import generate_mock_reply
+from app.services.ai_suggestion_feedback_service import record_feedback
+import logging
+
+logger = logging.getLogger("k12.ai")
 
 
 suggestion_dao = AISuggestionDAO()
 profile_dao = CustomerProfileDAO()
-chat_message_dao = ChatMessageDAO()
-timeline_event_dao = TimelineEventDAO()
 
 
 def _get_suggestion_or_404(db: Session, customer_id: int, suggestion_id: int) -> AISuggestion:
@@ -36,15 +35,33 @@ def _current_confirmed_profile(db: Session, customer_id: int):
 
 
 def generate_reply_draft(db: Session, customer_id: int, current_user: User) -> AISuggestion:
-    customer = get_customer_or_404(db, customer_id, current_user, "update")
-    profile = _current_confirmed_profile(db, customer_id)
-    content, evidence, evidence_level = generate_mock_reply(customer, profile, chat_message_dao.list_by_customer(db, customer_id), timeline_event_dao.list_by_customer(db, customer_id))
-    suggestion = AISuggestion(customer_id=customer_id, user_id=current_user.id, profile_id=profile.id, suggestion_type="reply", content_json=content, evidence_json=evidence, evidence_level=evidence_level, status=AISuggestionStatus.DRAFT.value, model_name="mock-rules", model_version="1", prompt_version="reply-v1")
-    suggestion_dao.add(db, suggestion)
-    db.flush()
-    append_audit_log(db, current_user, "customer.ai_reply_generated", "ai_suggestion", str(suggestion.id), {"customer_id": customer_id, "profile_id": profile.id, "status": suggestion.status})
-    db.commit()
-    db.refresh(suggestion)
+    """兼容旧 URL，但实际入口统一转发到 LangGraph 工作流。"""
+
+    # 使用局部导入避免 graph -> persistence_node -> 本 Service 的模块循环。
+    from app.services.ai_workflow_service import execute_ai_workflow_run, run_customer_ai_workflow
+
+    result = run_customer_ai_workflow(db, customer_id, current_user, "reply")
+    run_id = result.get("run_id")
+    if run_id and result.get("status") in {"queued", "running"}:
+        # 旧接口历史上是同步返回；仅为兼容旧客户端在此等待同一个已记录的运行。
+        execute_ai_workflow_run(int(run_id))
+        db.expire_all()
+        from app.services.ai_workflow_service import workflow_run_dao
+        run = workflow_run_dao.get_by_id(db, customer_id, int(run_id))
+        result = {
+            **result,
+            "status": ((run.result_json or {}).get("status") if run else "failed"),
+            "suggestion_ids": ((run.result_json or {}).get("suggestion_ids", []) if run else []),
+            "error": ((run.result_json or {}).get("error") if run else "AI 工作流任务不存在"),
+        }
+    if result.get("status") == "failed":
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.get("error") or "AI 工作流执行失败")
+    suggestion_ids = result.get("suggestion_ids") or []
+    if not suggestion_ids:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前工作流未生成回复建议")
+    suggestion = suggestion_dao.get_by_id(db, customer_id, int(suggestion_ids[0]))
+    if suggestion is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="AI 回复建议不存在")
     return suggestion
 
 
@@ -60,6 +77,7 @@ def edit_suggestion(db: Session, customer_id: int, suggestion_id: int, current_u
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="只有草稿或已编辑建议可以修改")
     suggestion.edited_content_json = payload.content
     suggestion.status = AISuggestionStatus.EDITED.value
+    record_feedback(db, suggestion, current_user, "edited", payload.content)
     append_audit_log(db, current_user, "customer.ai_reply_edited", "ai_suggestion", str(suggestion.id), {"status": suggestion.status})
     db.commit()
     db.refresh(suggestion)
@@ -74,6 +92,7 @@ def accept_suggestion(db: Session, customer_id: int, suggestion_id: int, current
     suggestion.status = AISuggestionStatus.ACCEPTED.value
     suggestion.decided_by = current_user.id
     suggestion.decided_at = datetime.now(timezone.utc)
+    record_feedback(db, suggestion, current_user, "accepted", suggestion.edited_content_json)
     append_audit_log(db, current_user, "customer.ai_reply_accepted", "ai_suggestion", str(suggestion.id), {"status": suggestion.status, "sent": False})
     db.commit()
     db.refresh(suggestion)
@@ -88,6 +107,7 @@ def reject_suggestion(db: Session, customer_id: int, suggestion_id: int, current
     suggestion.status = AISuggestionStatus.REJECTED.value
     suggestion.decided_by = current_user.id
     suggestion.decided_at = datetime.now(timezone.utc)
+    record_feedback(db, suggestion, current_user, "rejected", suggestion.edited_content_json)
     append_audit_log(db, current_user, "customer.ai_reply_rejected", "ai_suggestion", str(suggestion.id), {"status": suggestion.status})
     db.commit()
     db.refresh(suggestion)

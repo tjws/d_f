@@ -7,7 +7,7 @@ import AdminNavigation from '../components/admin/AdminNavigation.vue'
   <main class="admin-layout">
     <AdminNavigation />
     <section class="admin-content">
-      <RouterView />
+    <RouterView />
     </section>
   </main>
 </template>
@@ -15,7 +15,7 @@ import AdminNavigation from '../components/admin/AdminNavigation.vue'
 <style scoped>
 .admin-layout {
   min-height: 100vh;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #eef5ff 0, #f8fbff 300px);
 }
 
 .admin-content {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CustomerTag } from '../../types/tag'
+import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
 
 const props = defineProps<{
   tags: CustomerTag[]
@@ -11,6 +12,12 @@ const emit = defineEmits<{
   confirm: [customerTagId: number]
   reject: [customerTagId: number]
 }>()
+
+const tagStatusLabels: Record<string, string> = {
+  suggested: '待确认',
+  confirmed: '已确认',
+  rejected: '已拒绝',
+}
 </script>
 
 <template>
@@ -34,7 +41,7 @@ const emit = defineEmits<{
       <li v-for="item in props.tags" :key="item.id" class="tag-item">
         <div>
           <strong>{{ item.tag.name }}</strong>
-          <span>{{ item.status }} · {{ item.source }}</span>
+          <span>{{ tagStatusLabels[item.status] ?? item.status }} · {{ item.source === 'ai' ? 'AI 建议' : item.source }}</span>
         </div>
 
         <div v-if="item.status === 'suggested'" class="actions">
@@ -45,6 +52,8 @@ const emit = defineEmits<{
             拒绝
           </button>
         </div>
+
+        <AIEvidencePanel :evidence="item.evidence" />
       </li>
     </ul>
   </section>
@@ -105,9 +114,17 @@ button {
 }
 
 .tag-item {
+  display: block;
   padding: 12px;
   border-radius: 10px;
   background: #f0fdfa;
+}
+
+.tag-item > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .tag-item span {

@@ -39,4 +39,5 @@ def persist_suggestion_node(state: CustomerAIState) -> dict[str, object]:
     return {
         "status": "waiting_human",
         "suggestion_ids": [suggestion.id],
+        "next_action": "review_reply",
     }
