@@ -1,6 +1,8 @@
 """把 AI 草稿聚合成当前用户可见的待处理工作项。"""
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -20,9 +22,50 @@ from app.services.ai_suggestion_service import accept_suggestion, edit_suggestio
 from app.services.customer_profile_service import confirm_profile, reject_profile, update_draft
 from app.services.schedule_service import confirm_schedule_suggestion, edit_schedule_suggestion, reject_schedule_suggestion
 from app.services.tag_service import confirm_customer_tag, reject_customer_tag
+from app.services.audit_log_service import append_audit_log
+from app.services.customer_service import get_customer_or_404
 
 
 pending_action_dao = PendingActionDAO()
+_HISTORICAL_REVIEW_AFTER = timedelta(days=7)
+_DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def dismiss_historical_reply(db: Session, current_user: User, resource_id: int) -> dict[str, object]:
+    """将超过七天且未完成的回复草稿标记为 expired，保留审计和原始建议。"""
+
+    resource = db.get(AISuggestion, resource_id)
+    if resource is None or resource.suggestion_type != "reply":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 回复建议不存在")
+    get_customer_or_404(db, resource.customer_id, current_user, "update")
+    created_at = resource.created_at if resource.created_at.tzinfo else resource.created_at.replace(tzinfo=timezone.utc)
+    historical_before = datetime.now(timezone.utc).astimezone(_DISPLAY_TIMEZONE).date() - _HISTORICAL_REVIEW_AFTER
+    if created_at.astimezone(_DISPLAY_TIMEZONE).date() > historical_before:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅可关闭满七日的历史回复草稿")
+    return dismiss_reply(db, current_user, resource_id, reason="historical_workbench_dismissed")
+
+
+def dismiss_reply(
+    db: Session, current_user: User, resource_id: int, reason: str = "workbench_dismissed"
+) -> dict[str, object]:
+    """关闭不再需要的回复建议：不发送消息、不删除内容，保留审计链路。"""
+
+    resource = db.get(AISuggestion, resource_id)
+    if resource is None or resource.suggestion_type != "reply":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 回复建议不存在")
+    get_customer_or_404(db, resource.customer_id, current_user, "update")
+    if resource.status not in {"draft", "edited", "accepted"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该建议已经关闭")
+
+    resource.status = "expired"
+    resource.decided_by = current_user.id
+    resource.decided_at = datetime.now(timezone.utc)
+    append_audit_log(
+        db, current_user, "customer.ai_reply_expired", "ai_suggestion", str(resource.id),
+        {"reason": reason, "sent": False},
+    )
+    db.commit()
+    return {"action_type": "reply", "resource_id": resource.id, "status": resource.status, "closed": True}
 
 
 def review_pending_action(

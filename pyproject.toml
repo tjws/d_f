@@ -19,6 +19,9 @@ dependencies = [
     "redis>=5,<7",
     "dramatiq[redis]>=1.17,<3",
     "qdrant-client>=1.14,<2",
+    "pandas>=2.2,<3",
+    "scikit-learn>=1.6,<2",
+    "joblib>=1.4,<2",
 ]
 
 [dependency-groups]

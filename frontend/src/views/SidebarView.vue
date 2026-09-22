@@ -19,6 +19,7 @@ import type { ScheduleCompletion } from '../types/schedule'
 import { listAISuggestions, updateAISuggestion, acceptAISuggestion, rejectAISuggestion } from '../api/aiSuggestions'
 import { runAIWorkflow, getAIWorkflowRun, streamAIWorkflowRun } from '../api/aiWorkflow'
 import { controlSalesAgent, getSalesAgentRun, retrySalesAgent, runSalesAgent, submitSalesAgentFeedback } from '../api/agent'
+import { sortChatMessagesForDisplay } from '../utils/chatMessages'
 import type { Customer } from '../types/customer'
 import type { ChatMessage, ChatMessageCreate } from '../types/chatMessage'
 import type { CustomerProfile } from '../types/customerProfile'
@@ -50,12 +51,21 @@ const composerDraft = ref('')
 const composerSuggestionId = ref<number | null>(null)
 const agentResult = ref<SalesAgentResponse | null>(null)
 const agentError = ref('')
+const knowledgeReplyNotice = ref('')
 const selectedCustomer = computed(() => customers.value.find((item) => item.id === selectedId.value) ?? null)
 const latestProfile = computed(() => profiles.value[0] ?? null)
 let refreshTimer: number | undefined
 const lastMessageId = ref(0)
 const lastTimelineId = ref(0)
 let syncInFlight = false
+
+function normalizedText(value: unknown): string {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+}
+
+function suggestionText(item: AISuggestion): string {
+  return normalizedText(item.edited_content?.text ?? item.content.text)
+}
 
 async function loadCustomers(): Promise<void> {
   loadingCustomers.value = true; error.value = ''
@@ -67,9 +77,26 @@ async function loadCustomerData(): Promise<void> {
   const customerId = selectedId.value; chatError.value = ''; notice.value = ''
   planningError.value = ''
   const results = await Promise.allSettled([listChatMessages(customerId), listCustomerProfiles(customerId), listAISuggestions(customerId), listTimelineEvents(customerId), listStudents(customerId), listCustomerTags(customerId), listScheduleSuggestions(customerId), listSchedules(customerId)])
-  if (results[0].status === 'fulfilled') { messages.value = results[0].value; lastMessageId.value = Math.max(0, ...messages.value.map((item) => item.id)) } else chatError.value = '聊天记录加载失败'
+  if (results[0].status === 'fulfilled') { messages.value = sortChatMessagesForDisplay(results[0].value); lastMessageId.value = Math.max(0, ...messages.value.map((item) => item.id)) } else chatError.value = '聊天记录加载失败'
   if (results[1].status === 'fulfilled') profiles.value = results[1].value
-  if (results[2].status === 'fulfilled') suggestions.value = results[2].value.filter((item) => item.suggestion_type === 'reply')
+  if (results[2].status === 'fulfilled') {
+    // 已实际发送的建议已完成使命，不能继续在 AI 助手里显示为“可处理”。
+    const sentSuggestionIds = new Set(
+      messages.value.map((message) => message.suggestion_id).filter((id): id is number => typeof id === 'number'),
+    )
+    // 兼容此前手动复制后发送的旧消息：即使当时没有 suggestion_id，文本完全一致的
+    // 已接受建议也已完成，不应继续占据 AI 助手。
+    const sentReplyTexts = new Set(
+      messages.value
+        .filter((message) => message.direction === 'outbound')
+        .map((message) => normalizedText(message.content ?? message.content_masked)),
+    )
+    suggestions.value = results[2].value.filter(
+      (item) => item.suggestion_type === 'reply'
+        && !sentSuggestionIds.has(item.id)
+        && !(item.status === 'accepted' && sentReplyTexts.has(suggestionText(item))),
+    )
+  }
   if (results[3].status === 'fulfilled') { timelineEvents.value = results[3].value; lastTimelineId.value = Math.max(0, ...timelineEvents.value.map((item) => item.id)) }
   if (results[4].status === 'fulfilled') students.value = results[4].value
   if (results[5].status === 'fulfilled') tags.value = results[5].value
@@ -78,13 +105,13 @@ async function loadCustomerData(): Promise<void> {
   if ([results[5], results[6], results[7]].some((result) => result.status === 'rejected')) planningError.value = '标签或日程数据加载失败'
 }
 
-async function selectCustomer(customerId: number): Promise<void> { selectedId.value = customerId; composerDraft.value = ''; composerSuggestionId.value = null; await loadCustomerData() }
+async function selectCustomer(customerId: number): Promise<void> { selectedId.value = customerId; composerDraft.value = ''; composerSuggestionId.value = null; agentResult.value = null; agentError.value = ''; knowledgeReplyNotice.value = ''; await loadCustomerData() }
 async function syncSidebarIncremental(): Promise<void> {
   if (selectedId.value === null || syncInFlight) return
   syncInFlight = true
   try {
     const result = await syncSidebarCustomer(selectedId.value, lastMessageId.value, lastTimelineId.value)
-    if (result.messages.length > 0) messages.value = [...result.messages, ...messages.value].sort((a, b) => b.id - a.id)
+    if (result.messages.length > 0) messages.value = sortChatMessagesForDisplay([...messages.value, ...result.messages])
     if (result.timeline_events.length > 0) timelineEvents.value = [...result.timeline_events, ...timelineEvents.value].sort((a, b) => b.id - a.id)
     lastMessageId.value = result.next_message_id
     lastTimelineId.value = result.next_timeline_id
@@ -204,10 +231,11 @@ async function submitAgentFeedback(runId: number, action: AgentFeedbackAction): 
     agentError.value = reason instanceof Error ? reason.message : 'Agent 反馈提交失败'
   }
 }
-async function sendMessage(payload: ChatMessageCreate): Promise<void> { if (selectedId.value === null) return; sending.value = true; chatError.value = ''; try { if (payload.direction === 'inbound') { await emitMockCallback({ ...payload, event_id: `sidebar-event-${Date.now()}`, event_type: 'chat_message', userid: 'current-user', customer_id: selectedId.value }) } else { await createMockChatMessage(selectedId.value, payload) }; composerDraft.value = ''; composerSuggestionId.value = null; await loadCustomerData() } catch (reason) { chatError.value = reason instanceof Error ? reason.message : '消息写入失败' } finally { sending.value = false } }
+async function sendMessage(payload: ChatMessageCreate): Promise<void> { if (selectedId.value === null) return; sending.value = true; chatError.value = ''; try { if (payload.direction === 'inbound') { await emitMockCallback({ ...payload, event_id: `sidebar-event-${Date.now()}`, event_type: 'chat_message', userid: 'current-user', customer_id: selectedId.value }) } else { await createMockChatMessage(selectedId.value, payload) }; composerDraft.value = ''; composerSuggestionId.value = null; agentResult.value = null; agentError.value = ''; knowledgeReplyNotice.value = ''; await loadCustomerData(); notice.value = payload.direction === 'outbound' ? '消息已人工确认并发送，等待客户回复。' : '已收到客户新消息，现在可以生成下一步建议。' } catch (reason) { chatError.value = reason instanceof Error ? reason.message : '消息写入失败' } finally { sending.value = false } }
 async function editSuggestion(id: number, payload: AISuggestionUpdate): Promise<void> { if (selectedId.value === null) return; try { await updateAISuggestion(selectedId.value, id, payload); await loadCustomerData(); notice.value = '回复建议已保存人工编辑。' } catch (reason) { error.value = reason instanceof Error ? reason.message : '建议编辑失败' } }
 function useSuggestion(id: number, text: string): void { composerDraft.value = text; composerSuggestionId.value = id; notice.value = '建议已放入聊天框，请人工检查后发送。' }
 async function generateReply(): Promise<void> { if (selectedId.value === null) return; workflowBusy.value = true; error.value = ''; notice.value = ''; try { const result = await runAIWorkflow(selectedId.value, 'reply'); if ((result.status === 'queued' || result.status === 'running') && result.run_id) { const terminal = await waitForWorkflowRun(result.run_id); notice.value = terminal.next_action === 'confirm_profile' ? '请先确认客户画像。' : 'AI 回复建议已生成，请人工确认。' } else { notice.value = result.next_action === 'confirm_profile' ? '请先确认客户画像。' : 'AI 回复建议已生成，请人工确认。' } await loadCustomerData() } catch (reason) { error.value = reason instanceof Error ? reason.message : 'AI 工作流失败' } finally { workflowBusy.value = false } }
+async function generateReplyFromKnowledge(): Promise<void> { knowledgeReplyNotice.value = '正在根据客户最新一条消息检索资料并生成回复建议…'; await generateReply(); knowledgeReplyNotice.value = error.value ? `生成失败：${error.value}` : notice.value || '已完成，请在 AI 助手中审阅草稿。' }
 async function confirmProfile(id: number): Promise<void> { if (selectedId.value === null) return; await confirmCustomerProfile(selectedId.value, id); await loadCustomerData(); notice.value = '画像已人工确认。' }
 async function acceptSuggestion(id: number): Promise<void> { if (selectedId.value === null) return; await acceptAISuggestion(selectedId.value, id); await loadCustomerData(); notice.value = '回复建议已接受，请人工发送。' }
 async function rejectSuggestion(id: number): Promise<void> { if (selectedId.value === null) return; await rejectAISuggestion(selectedId.value, id); await loadCustomerData(); notice.value = '回复建议已拒绝。' }
@@ -241,14 +269,21 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) window.clearInterval(ref
       <div class="sidebar-grid">
         <SidebarCustomerList :customers="customers" :selected-id="selectedId" :loading="loadingCustomers" @select="selectCustomer" />
         <SidebarChatPanel :messages="messages" :error="chatError" :sending="sending" :suggested-draft="composerDraft" :suggested-suggestion-id="composerSuggestionId" @send="sendMessage" />
-        <div class="sidebar-right-column"><SidebarAgentPanel :customer-id="selectedId" :result="agentResult" :busy="workflowBusy" :error="agentError" @run="runAgent" @control="controlAgent" @retry="retryAgent" @feedback="submitAgentFeedback" /><SidebarContextPanel :customer="selectedCustomer" :profile="latestProfile" :students="students" :suggestions="suggestions" :timeline-events="timelineEvents" :busy="workflowBusy" :notice="notice" :error="error" @run="generateReply" @confirm-profile="confirmProfile" @edit="editSuggestion" @use-suggestion="useSuggestion" @accept="acceptSuggestion" @reject="rejectSuggestion" /><SidebarPlanningPanel :tags="tags" :schedule-suggestions="scheduleSuggestions" :schedules="schedules" :busy="workflowBusy" :error="planningError" @generate-tags="generateTags" @confirm-tag="confirmTag" @reject-tag="rejectTag" @generate-schedule="generateSchedule" @edit-schedule="editSchedule" @confirm-schedule="confirmSchedule" @complete-schedule="completeScheduleItem" @cancel-schedule="cancelScheduleItem" /><KnowledgeSearchPanel /></div>
+        <div class="sidebar-right-column"><SidebarAgentPanel :customer-id="selectedId" :result="agentResult" :busy="workflowBusy" :error="agentError" @run="runAgent" @control="controlAgent" @retry="retryAgent" @feedback="submitAgentFeedback" /><SidebarContextPanel :customer="selectedCustomer" :profile="latestProfile" :students="students" :suggestions="suggestions" :timeline-events="timelineEvents" :busy="workflowBusy" :notice="notice" :error="error" @run="generateReply" @confirm-profile="confirmProfile" @edit="editSuggestion" @use-suggestion="useSuggestion" @accept="acceptSuggestion" @reject="rejectSuggestion" /><SidebarPlanningPanel :tags="tags" :schedule-suggestions="scheduleSuggestions" :schedules="schedules" :busy="workflowBusy" :error="planningError" @generate-tags="generateTags" @confirm-tag="confirmTag" @reject-tag="rejectTag" @generate-schedule="generateSchedule" @edit-schedule="editSchedule" @confirm-schedule="confirmSchedule" @complete-schedule="completeScheduleItem" @cancel-schedule="cancelScheduleItem" /><KnowledgeSearchPanel :generating="workflowBusy" :reply-notice="knowledgeReplyNotice" :reply-error="error" @generate-reply="generateReplyFromKnowledge" /></div>
       </div>
     </section>
   </main>
 </template>
 
 <style scoped>
-.sidebar-page { min-height: 100vh; padding: 28px clamp(16px, 4vw, 60px) 52px; color: #1f2937; background: radial-gradient(circle at 50% -20%, #dce9ff 0, transparent 36%), #f1f4f8; }.page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1500px; margin: 0 auto 16px; }.simulation-title { display: flex; align-items: center; gap: 13px; }.wecom-mark { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: white; background: linear-gradient(135deg, #07c160, #15b8d5); box-shadow: 0 9px 20px rgb(7 193 96 / 25%); font-size: 21px; }.eyebrow { margin: 0 0 5px; color: #2563eb; font-size: 11px; font-weight: 800; letter-spacing: .13em; }.page-header h1 { margin: 0; font-size: clamp(25px, 3.5vw, 36px); }.page-header p:last-child { margin: 4px 0 0; color: #64748b; }.mode-badge { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid #b7e8cb; border-radius: 999px; color: #16774a; background: #f1fcf5; font-size: 12px; font-weight: 700; }.mode-badge i { width: 7px; height: 7px; border-radius: 50%; background: #07c160; }.sync-hint { display: flex; gap: 7px; max-width: 1500px; margin: 0 auto 12px; color: #718096; font-size: 12px; }.sync-hint span { color: #07c160; }.sidebar-frame { max-width: 1500px; min-height: min(760px, calc(100vh - 185px)); margin: 0 auto; overflow: hidden; border: 1px solid #d8dee8; border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgb(33 46 68 / 15%); }.sidebar-grid { display: grid; grid-template-columns: 256px minmax(400px, 1fr) 354px; height: min(760px, calc(100vh - 185px)); min-height: 620px; }.sidebar-right-column { display: grid; align-content: start; gap: 12px; overflow-y: auto; padding: 14px; background: #f6f7f9; }.error { max-width: 1500px; margin: 10px auto; color: #b91c1c; }
+.sidebar-page { min-height: 100vh; padding: 28px clamp(16px, 4vw, 60px) 52px; color: #1f2937; background: radial-gradient(circle at 50% -20%, #dce9ff 0, transparent 36%), #f1f4f8; }.page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1500px; margin: 0 auto 16px; }.simulation-title { display: flex; align-items: center; gap: 13px; }.wecom-mark { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: white; background: linear-gradient(135deg, #07c160, #15b8d5); box-shadow: 0 9px 20px rgb(7 193 96 / 25%); font-size: 21px; }.eyebrow { margin: 0 0 5px; color: #2563eb; font-size: 11px; font-weight: 800; letter-spacing: .13em; }.page-header h1 { margin: 0; font-size: clamp(25px, 3.5vw, 36px); }.page-header p:last-child { margin: 4px 0 0; color: #64748b; }.mode-badge { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid #b7e8cb; border-radius: 999px; color: #16774a; background: #f1fcf5; font-size: 12px; font-weight: 700; }.mode-badge i { width: 7px; height: 7px; border-radius: 50%; background: #07c160; }.sync-hint { display: flex; gap: 7px; max-width: 1500px; margin: 0 auto 12px; color: #718096; font-size: 12px; }.sync-hint span { color: #07c160; }.sidebar-frame { max-width: 1500px; min-height: min(760px, calc(100vh - 185px)); margin: 0 auto; overflow: hidden; border: 1px solid #d8dee8; border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgb(33 46 68 / 15%); }.sidebar-grid { display: grid; grid-template-columns: 230px minmax(360px, 1fr) 440px; height: min(760px, calc(100vh - 185px)); min-height: 620px; }.sidebar-right-column { display: grid; align-content: start; gap: 12px; overflow-y: auto; padding: 14px; background: #f6f7f9; }.error { max-width: 1500px; margin: 10px auto; color: #b91c1c; }
 :deep(.sidebar-frame > .sidebar-grid > .customer-list) { overflow-y: auto; padding: 14px 10px; border-right: 1px solid #e5e9ef; border-radius: 0; background: #f8f9fb; }.sidebar-frame :deep(.chat-panel) { min-height: 0; height: 100%; border-radius: 0; background: #f5f5f5; }.sidebar-frame :deep(.sidebar-right-column .panel) { border: 1px solid #e1e6ed; border-radius: 12px; background: white; box-shadow: 0 4px 12px rgb(15 23 42 / 4%); }
 @media (max-width: 1080px) { .sidebar-frame { overflow: visible; }.sidebar-grid { grid-template-columns: 230px minmax(300px, 1fr); height: auto; }.sidebar-right-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }.sidebar-frame :deep(.chat-panel) { min-height: 620px; } }@media (max-width: 700px) { .sidebar-page { padding: 18px 12px 32px; }.page-header { align-items: flex-start; flex-direction: column; }.sidebar-grid, .sidebar-right-column { grid-template-columns: 1fr; }.sidebar-right-column { padding: 12px; }.sidebar-frame { border-radius: 14px; }.sidebar-frame :deep(.customer-list) { max-height: 260px; border-right: 0; border-bottom: 1px solid #e5e9ef; } }
+
+/* 让本地模拟更接近常见企微桌面工作区：会话区保持安静，辅助信息集中在右侧。 */
+.sidebar-page { background: radial-gradient(circle at 80% -8%, rgb(7 193 96 / 12%), transparent 25rem), radial-gradient(circle at 12% 0, #dce9ff 0, transparent 31rem), #f1f4f8; }
+.page-header { padding: 4px 4px 0; }.simulation-title { gap: 15px; }.wecom-mark { width: 46px; height: 46px; border-radius: 15px; }.mode-badge { box-shadow: 0 6px 16px rgb(7 193 96 / 9%); }.sync-hint { padding-left: 4px; }
+.sidebar-frame { border-color: #d5dfeb; border-radius: 20px; box-shadow: 0 28px 72px rgb(15 23 42 / 14%); }.sidebar-right-column { gap: 14px; padding: 16px; background: linear-gradient(180deg, #f6f8fb, #f3f6fa); }
+.sidebar-frame :deep(.sidebar-right-column .panel) { border-color: #dbe4f0; border-radius: 14px; box-shadow: var(--shadow-sm); }
+.sidebar-frame :deep(.customer-list) { background: #f8fafc; }.sidebar-frame :deep(.chat-panel) { background: linear-gradient(180deg, #f8fafc, #f4f7fb); }
 </style>

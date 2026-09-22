@@ -48,6 +48,12 @@ function selectFilter(next: Filter): void {
   void load()
 }
 
+function reviewTarget(item: PendingAction): { path: string; query: Record<string, string> } {
+  // 审阅入口直接定位到对应业务场景，避免销售先落到无关的客户概览。
+  const tab = item.action_type === 'schedule' ? 'followup' : 'ai'
+  return { path: `/customers/${item.customer_id}`, query: { tab, focus: item.action_type, suggestion_id: String(item.resource_id) } }
+}
+
 async function decide(item: PendingAction, action: 'accepted' | 'rejected'): Promise<void> {
   if (actingId.value !== null) return
   actingId.value = item.id
@@ -98,7 +104,7 @@ onMounted(load)
           <button type="button" class="reject" :disabled="actingId !== null" @click="decide(item, 'rejected')">拒绝</button>
         </div>
         <p v-else-if="item.action_type === 'reply'" class="accepted-hint">已接受，下一步请进入客户工作台，把建议放入聊天框并人工发送。</p>
-        <RouterLink :to="`/customers/${item.customer_id}`" class="review-link">进入客户工作台处理 →</RouterLink>
+        <RouterLink :to="reviewTarget(item)" class="review-link">审阅这条建议 →</RouterLink>
       </article>
     </section>
     <section v-else class="empty-state">
@@ -121,4 +127,6 @@ onMounted(load)
 .card-actions .accept { background: #15803d; }
 .card-actions .reject { background: #be123c; }
 .accepted-hint { margin: 0; padding: 9px 11px; border-radius: 9px; color: #075985; background: #e0f2fe; font-size: 13px; line-height: 1.5; }
+
+.pending-page { padding-top: 34px; background: radial-gradient(circle at 90% -6%, rgb(79 70 229 / 11%), transparent 25rem), linear-gradient(180deg, #eff6ff 0, #f8fafc 340px); }.page-header { padding: 24px 26px; border: 1px solid rgb(255 255 255 / 80%); border-radius: 20px; background: rgb(255 255 255 / 72%); box-shadow: var(--shadow-sm); }.action-card { border-color: var(--line); box-shadow: var(--shadow-sm); transition: transform .16s ease, box-shadow .16s ease; }.action-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }.filters button { border-color: #d6e0ed; background: rgb(255 255 255 / 84%); }.empty-state { border-style: solid; border-color: var(--line); box-shadow: var(--shadow-sm); }
 </style>

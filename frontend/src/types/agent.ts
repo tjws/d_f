@@ -1,6 +1,6 @@
 import type { AIWorkflowRun } from './aiWorkflow'
 
-export type AgentIntent = 'reply' | 'tag' | 'schedule' | 'comprehensive'
+export type AgentIntent = 'reply' | 'tag' | 'schedule' | 'comprehensive' | 'wait'
 export type AgentTask = 'auto' | AgentIntent
 
 export interface AgentToolTrace {
@@ -23,7 +23,7 @@ export interface SalesAgentResponse {
   agent_name: string
   intent: AgentIntent
   selected_tool: string
-  planned_by: 'bailian' | 'mock' | 'explicit_task'
+  planned_by: 'bailian' | 'mock' | 'explicit_task' | 'rule_based'
   planner_run_id: number | null
   human_confirmation_required: boolean
   tool_trace: AgentToolTrace[]

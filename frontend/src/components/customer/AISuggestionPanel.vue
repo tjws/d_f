@@ -4,8 +4,6 @@ import type {
   AISuggestion,
   AISuggestionUpdate,
 } from '../../types/aiSuggestion'
-import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
-import AIModelMeta from '../ai/AIModelMeta.vue'
 
 const props = defineProps<{
   suggestions: AISuggestion[]
@@ -17,6 +15,7 @@ const emit = defineEmits<{
   edit: [suggestionId: number, payload: AISuggestionUpdate]
   accept: [suggestionId: number]
   reject: [suggestionId: number]
+  use: [suggestionId: number, text: string]
 }>()
 
 const currentSuggestion = computed(
@@ -51,6 +50,11 @@ function saveEdit(): void {
     },
   })
 }
+
+function useSuggestion(): void {
+  if (!currentSuggestion.value || !text.value.trim()) return
+  emit('use', currentSuggestion.value.id, text.value.trim())
+}
 </script>
 
 <template>
@@ -61,7 +65,7 @@ function saveEdit(): void {
         <h2>回复建议</h2>
       </div>
       <button type="button" @click="emit('generate')">
-        生成建议
+        {{ currentSuggestion ? '重新生成建议' : '生成建议' }}
       </button>
     </div>
 
@@ -72,46 +76,32 @@ function saveEdit(): void {
 
     <template v-else>
       <div class="status-row">
-        <span>状态：{{ suggestionStatusLabels[currentSuggestion.status] ?? currentSuggestion.status }}</span>
-        <span>证据等级：{{ currentSuggestion.evidence_level }}</span>
+        <span>{{ suggestionStatusLabels[currentSuggestion.status] ?? currentSuggestion.status }}</span>
+        <span>生成于 {{ new Date(currentSuggestion.created_at).toLocaleString('zh-CN') }}</span>
       </div>
 
-      <AIModelMeta
-        :meta="{
-          model_name: currentSuggestion.model_name,
-          model_version: currentSuggestion.model_version,
-          created_at: currentSuggestion.created_at,
-          evidence_level: currentSuggestion.evidence_level,
-        }"
-      />
-
-      <textarea v-model="text" rows="5" />
+      <label class="suggestion-editor">建议内容（可直接修改）<textarea v-model="text" rows="5" :disabled="currentSuggestion.status === 'rejected'" /></label>
 
       <div class="actions">
-        <button type="button" @click="saveEdit">保存编辑</button>
+        <template v-if="currentSuggestion.status === 'draft' || currentSuggestion.status === 'edited'">
+          <button type="button" @click="saveEdit">保存编辑</button>
+          <button type="button" class="success" @click="emit('accept', currentSuggestion.id)">接受建议</button>
+          <button type="button" class="danger" @click="emit('reject', currentSuggestion.id)">拒绝建议</button>
+        </template>
         <button
+          v-else-if="currentSuggestion.status === 'accepted'"
           type="button"
           class="success"
-          :disabled="currentSuggestion.status !== 'draft' && currentSuggestion.status !== 'edited'"
-          @click="emit('accept', currentSuggestion.id)"
+          @click="useSuggestion"
         >
-          接受建议
-        </button>
-        <button
-          type="button"
-          class="danger"
-          :disabled="currentSuggestion.status !== 'draft' && currentSuggestion.status !== 'edited'"
-          @click="emit('reject', currentSuggestion.id)"
-        >
-          拒绝建议
+          放入聊天输入框
         </button>
       </div>
 
       <p class="human-note">
-        接受建议不会自动发送消息，发送动作仍由人工完成。
+        {{ currentSuggestion.status === 'accepted' ? '下一步：放入聊天输入框后，请再次核对内容，再由你手动发送。' : '接受建议不会自动发送消息，发送动作仍由人工完成。' }}
       </p>
 
-      <AIEvidencePanel :evidence="currentSuggestion.evidence" />
     </template>
   </section>
 </template>
@@ -155,6 +145,7 @@ textarea {
   border-radius: 8px;
   font: inherit;
 }
+.suggestion-editor { display: grid; gap: 6px; margin-top: 16px; color: #475569; font-size: 13px; font-weight: 700; }
 
 button {
   padding: 8px 12px;

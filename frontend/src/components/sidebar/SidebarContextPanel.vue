@@ -5,16 +5,22 @@ import type { CustomerProfile } from '../../types/customerProfile'
 import type { AISuggestion, AISuggestionUpdate } from '../../types/aiSuggestion'
 import type { TimelineEvent } from '../../types/timelineEvent'
 import type { Student } from '../../types/student'
-import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
 
 const props = defineProps<{ customer: Customer | null; profile: CustomerProfile | null; students: Student[]; suggestions: AISuggestion[]; timelineEvents: TimelineEvent[]; busy?: boolean; notice?: string; error?: string }>()
 const emit = defineEmits<{ run: []; confirmProfile: [id: number]; edit: [id: number, payload: AISuggestionUpdate]; useSuggestion: [id: number, text: string]; accept: [id: number]; reject: [id: number] }>()
-const latestSuggestion = () => props.suggestions[0]
+// 已发送的建议不应继续占据助手面板；父组件会先过滤已发送项，这里再只取可继续处理的建议。
+const latestSuggestion = () => props.suggestions.find((item) => ['draft', 'edited', 'accepted'].includes(item.status))
 const editedText = ref('')
+const statusLabels: Record<string, string> = { draft: '待审阅', edited: '已编辑，待确认', accepted: '已接受', rejected: '已拒绝', confirmed: '已确认' }
 
 function suggestionText(suggestion: AISuggestion | undefined): string {
   if (!suggestion) return ''
   return String(suggestion.edited_content?.text ?? suggestion.content.text ?? '')
+}
+
+function profileSummary(profile: CustomerProfile): string {
+  const values = Object.values(profile.dimensions)
+  return values.find((value) => typeof value === 'string') as string | undefined ?? '已生成客户画像，请在客户档案中查看。'
 }
 
 watch(() => props.suggestions[0]?.id, () => {
@@ -56,10 +62,11 @@ function useSuggestion(): void {
       <div class="panel-heading"><span>AI 助手</span><small>人工确认模式</small></div>
       <button type="button" class="primary" :disabled="busy || !customer" @click="emit('run')">{{ busy ? '生成中…' : '生成回复建议' }}</button>
       <p v-if="notice" class="notice">{{ notice }}</p><p v-if="error" class="error">{{ error }}</p>
-      <div v-if="profile" class="item"><strong>画像：{{ profile.status }}</strong><p>{{ profile.dimensions.summary || '已生成结构化画像' }}</p><button v-if="profile.status === 'draft'" type="button" @click="emit('confirmProfile', profile.id)">确认画像</button></div>
-      <div v-if="latestSuggestion()" class="item"><strong>回复建议：{{ latestSuggestion()?.status }}</strong><textarea v-model="editedText" rows="4" aria-label="AI 回复建议编辑框" /><div v-if="latestSuggestion()?.status === 'draft' || latestSuggestion()?.status === 'edited'" class="actions"><button type="button" @click="saveEdit">保存编辑</button><button type="button" class="secondary" @click="useSuggestion">放入聊天框</button><button type="button" @click="emit('accept', latestSuggestion()!.id)">接受</button><button type="button" class="danger" @click="emit('reject', latestSuggestion()!.id)">拒绝</button></div><button v-else-if="latestSuggestion()?.status === 'accepted'" type="button" class="secondary" @click="useSuggestion">放入聊天框</button><AIEvidencePanel :evidence="latestSuggestion()!.evidence" /></div>
+      <div v-if="profile" class="item"><strong>客户画像：{{ statusLabels[profile.status] ?? profile.status }}</strong><p>{{ profileSummary(profile) }}</p><button v-if="profile.status === 'draft'" type="button" @click="emit('confirmProfile', profile.id)">确认画像</button></div>
+      <div v-if="latestSuggestion()" class="item"><strong>回复建议：{{ statusLabels[latestSuggestion()?.status ?? ''] ?? latestSuggestion()?.status }}</strong><textarea v-model="editedText" rows="4" aria-label="AI 回复建议编辑框" /><div v-if="latestSuggestion()?.status === 'draft' || latestSuggestion()?.status === 'edited'" class="actions"><button type="button" @click="saveEdit">保存编辑</button><button type="button" @click="emit('accept', latestSuggestion()!.id)">接受建议</button><button type="button" class="danger" @click="emit('reject', latestSuggestion()!.id)">拒绝</button></div><div v-else-if="latestSuggestion()?.status === 'accepted'" class="accepted-action"><p>已接受。下一步：放入聊天框，检查后由人工发送。</p><button type="button" class="secondary" @click="useSuggestion">放入聊天框</button></div></div>
+      <p v-else class="muted ai-empty">暂无待处理的回复建议。收到客户新消息后，可重新生成。</p>
     </section>
-    <section class="panel hint"><strong>侧边栏边界</strong><p>这里是浏览器本地模拟，不代表真实企业微信 SDK，也不会自动发送消息。</p></section>
+    <section class="panel hint"><strong>发送提醒</strong><p>AI 只提供建议；消息需要你最后确认后才会发送。</p></section>
   </aside>
 </template>
 
@@ -72,6 +79,6 @@ dl { display: grid; grid-template-columns: 88px 1fr; gap: 8px; margin: 0; } dt {
 .student-summary { display: grid; gap: 4px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0; }.student-summary span { color: #0f766e; font-size: 13px; }
 .primary, .item button { padding: 8px 10px; border: 0; border-radius: 8px; color: white; background: #2563eb; cursor: pointer; }.primary:disabled { opacity: .6; }
 .item { margin-top: 12px; padding: 12px; border-radius: 10px; background: #f8fafc; }.item p { margin: 6px 0 10px; color: #475569; }.item textarea { box-sizing: border-box; width: 100%; margin: 9px 0; padding: 9px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }.item button.danger { background: #be123c; }.item button.secondary { color: #1e40af; background: #dbeafe; }.notice { color: #166534; }.error { color: #b91c1c; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }.accepted-action { display:grid; gap:8px; }.accepted-action p { margin-bottom:0; font-size:12px; }.ai-empty { margin:12px 0 0; }.item button.danger { background: #be123c; }.item button.secondary { color: #1e40af; background: #dbeafe; }.notice { color: #166534; }.error { color: #b91c1c; }
 .hint { color: #475569; border-style: dashed; background: #f8fafc; }.hint p { margin-bottom: 0; font-size: 13px; }.timeline-item { margin-top: 9px; padding: 10px; border-left: 3px solid #93c5fd; border-radius: 8px; background: #f8fbff; }.timeline-item p { margin: 4px 0; color: #475569; font-size: 13px; }.timeline-item small { color: #64748b; font-size: 11px; }
 </style>

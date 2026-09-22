@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import type { AISuggestion, AISuggestionUpdate } from '../../types/aiSuggestion'
 import type { CustomerTag } from '../../types/tag'
 import type { Schedule, ScheduleCompletion, ScheduleOutcome } from '../../types/schedule'
-import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
 
 const props = defineProps<{
   tags: CustomerTag[]
@@ -24,7 +23,17 @@ const emit = defineEmits<{
   cancelSchedule: [id: number]
 }>()
 
-const currentScheduleSuggestion = computed(() => props.scheduleSuggestions[0] ?? null)
+const currentScheduleSuggestion = computed(() =>
+  props.scheduleSuggestions.find((item) => item.status === 'draft' || item.status === 'edited') ?? null,
+)
+const activeSchedules = computed(() => props.schedules.filter((item) => item.status === 'confirmed'))
+const historySchedules = computed(() => props.schedules.filter((item) => item.status !== 'confirmed'))
+const visibleTags = computed(() => props.tags.filter((item) => item.status !== 'rejected'))
+const rejectedTags = computed(() => props.tags.filter((item) => item.status === 'rejected'))
+const tagStatusLabels: Record<string, string> = {
+  suggested: '待人工确认',
+  confirmed: '已确认',
+}
 const title = ref('')
 const description = ref('')
 const dueAt = ref('')
@@ -62,11 +71,15 @@ function submitCompletion(scheduleId: number): void {
 
     <div class="planning-block">
       <div class="block-title"><strong>AI 标签</strong><button type="button" :disabled="props.busy" @click="emit('generateTags')">生成标签</button></div>
-      <p v-if="props.tags.length === 0" class="muted">暂无标签建议。</p>
-      <article v-for="item in props.tags" :key="item.id" class="tag-item">
-        <span><strong>{{ item.tag.name }}</strong> · {{ item.status }}</span>
+      <p v-if="visibleTags.length === 0" class="muted">暂无待处理或已确认标签。</p>
+      <article v-for="item in visibleTags" :key="item.id" class="tag-item">
+        <span><strong>{{ item.tag.name }}</strong><small>{{ tagStatusLabels[item.status] ?? '已处理' }}</small></span>
         <div v-if="item.status === 'suggested'" class="actions"><button type="button" class="success" @click="emit('confirmTag', item.id)">确认</button><button type="button" class="danger" @click="emit('rejectTag', item.id)">拒绝</button></div>
       </article>
+      <details v-if="rejectedTags.length" class="tag-history">
+        <summary>已拒绝建议（{{ rejectedTags.length }}）</summary>
+        <p v-for="item in rejectedTags" :key="item.id">{{ item.tag.name }}</p>
+      </details>
     </div>
 
     <div class="planning-block">
@@ -77,9 +90,8 @@ function submitCompletion(scheduleId: number): void {
         <label>说明<textarea v-model="description" rows="2" /></label>
         <label>截止时间<input v-model="dueAt" type="datetime-local" /></label>
         <div class="actions"><button type="button" @click="saveScheduleEdit">保存编辑</button><button v-if="currentScheduleSuggestion.status === 'draft' || currentScheduleSuggestion.status === 'edited'" type="button" class="success" @click="emit('confirmSchedule', currentScheduleSuggestion.id)">确认日程</button></div>
-        <AIEvidencePanel :evidence="currentScheduleSuggestion.evidence" />
       </div>
-      <article v-for="schedule in props.schedules" :key="schedule.id" class="schedule-item">
+      <article v-for="schedule in activeSchedules" :key="schedule.id" class="schedule-item">
         <span><strong>{{ schedule.title }}</strong><small>{{ schedule.due_at }} · {{ schedule.status }}</small><small v-if="schedule.status === 'completed'">人工结果：{{ outcomeLabels[schedule.outcome as ScheduleOutcome] ?? schedule.outcome ?? '其他结果' }}<template v-if="schedule.completion_note"> · {{ schedule.completion_note }}</template></small></span>
         <div v-if="schedule.status === 'confirmed'" class="actions"><button type="button" class="success" @click="openCompletion(schedule.id)">记录结果</button><button type="button" class="danger" @click="emit('cancelSchedule', schedule.id)">取消</button></div>
         <form v-if="completingId === schedule.id" class="completion-form" @submit.prevent="submitCompletion(schedule.id)">
@@ -88,6 +100,7 @@ function submitCompletion(scheduleId: number): void {
           <div class="actions"><button type="submit" class="success">保存并完成</button><button type="button" @click="completingId = null">取消</button></div>
         </form>
       </article>
+      <details v-if="historySchedules.length" class="schedule-history"><summary>历史日程（{{ historySchedules.length }}）</summary><p v-for="schedule in historySchedules" :key="schedule.id">{{ schedule.title }} · {{ schedule.status === 'cancelled' ? '已取消' : '已完成' }}</p></details>
     </div>
   </section>
 </template>
@@ -98,7 +111,9 @@ function submitCompletion(scheduleId: number): void {
 .panel-heading { margin-bottom: 12px; color: #1e3a8a; font-weight: 700; }.panel-heading small, .muted { color: #64748b; font-weight: 400; }
 .planning-block { display: grid; gap: 8px; padding-top: 10px; margin-top: 10px; border-top: 1px solid #e2e8f0; }.block-title strong { color: #334155; }
 button { padding: 7px 9px; border: 0; border-radius: 7px; color: white; background: #2563eb; cursor: pointer; }button:disabled { opacity: .5; cursor: not-allowed; }.success { background: #16a34a; }.danger { background: #be123c; }
-.tag-item, .schedule-item, .schedule-suggestion { padding: 9px; border-radius: 8px; background: #f8fafc; }.tag-item strong { color: #0f766e; }.schedule-item { align-items: flex-start; }.schedule-item span { display: grid; gap: 3px; }.schedule-item small { color: #64748b; }
+.tag-item, .schedule-item, .schedule-suggestion { padding: 9px; border-radius: 8px; background: #f8fafc; }.tag-item span { display: grid; gap: 3px; }.tag-item strong { color: #0f766e; }.tag-item small, .schedule-item small { color: #64748b; font-size: 11px; }.schedule-item { align-items: flex-start; }.schedule-item span { display: grid; gap: 3px; }
+.tag-history { color: #64748b; font-size: 12px; }.tag-history summary { cursor: pointer; }.tag-history p { margin: 6px 0 0; padding-left: 8px; color: #94a3b8; }
+.schedule-history { color: #64748b; font-size: 12px; }.schedule-history summary { cursor: pointer; }.schedule-history p { margin: 6px 0 0; padding-left: 8px; color: #94a3b8; }
 label { display: grid; gap: 4px; color: #475569; font-size: 12px; }input, textarea { box-sizing: border-box; width: 100%; padding: 7px; border: 1px solid #cbd5e1; border-radius: 7px; font: inherit; }
 .completion-form { display: grid; gap: 7px; width: 100%; padding-top: 8px; border-top: 1px solid #dbe3f0; }.completion-form select { box-sizing: border-box; width: 100%; padding: 7px; border: 1px solid #cbd5e1; border-radius: 7px; font: inherit; }
 .error { color: #b91c1c; }

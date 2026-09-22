@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import type { ChatMessage, ChatMessageCreate } from '../../types/chatMessage'
 
 const props = defineProps<{ messages: ChatMessage[]; error?: string; sending?: boolean; suggestedDraft?: string; suggestedSuggestionId?: number | null }>()
 const emit = defineEmits<{ send: [payload: ChatMessageCreate] }>()
 const text = ref('')
+const messagesElement = ref<HTMLElement | null>(null)
 const parentPresets = [
   '您好，想了解一下初一数学课程和收费。',
   '孩子最近数学成绩不太稳定，老师有什么建议吗？',
@@ -14,6 +15,12 @@ const parentPresets = [
 watch(() => props.suggestedDraft, (value) => {
   if (value !== undefined) text.value = value
 })
+
+watch(() => props.messages.length, async () => {
+  // 新消息写入后保持在会话底部，符合聊天窗口的阅读习惯。
+  await nextTick()
+  if (messagesElement.value) messagesElement.value.scrollTop = messagesElement.value.scrollHeight
+}, { immediate: true })
 
 function send(): void {
   const content = text.value.trim()
@@ -32,7 +39,7 @@ function simulateParentMessage(content: string, index: number): void {
   <section class="panel chat-panel">
     <div class="panel-heading"><div class="contact"><span class="contact-avatar">家</span><span><strong>客户会话</strong><small><i /> 本地 Mock 对话</small></span></div><button type="button" class="more" aria-label="会话选项">•••</button></div>
     <p v-if="error" class="error">{{ error }}</p>
-    <div class="messages">
+    <div ref="messagesElement" class="messages">
       <p v-if="messages.length === 0" class="muted">暂无消息。</p>
       <article v-for="message in messages" :key="message.id" class="message" :class="message.direction">
         <span class="message-avatar">{{ message.direction === 'inbound' ? '家' : '我' }}</span><div class="bubble"><small>{{ message.direction === 'inbound' ? '客户' : '销售' }}</small><p>{{ message.content_masked || message.content || '[非文本消息]' }}</p><time>{{ new Date(message.sent_at).toLocaleString('zh-CN') }}</time></div>

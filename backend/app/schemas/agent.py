@@ -62,9 +62,10 @@ class AgentStepRead(BaseModel):
 
 class SalesAgentRead(BaseModel):
     agent_name: str
-    intent: Literal["reply", "tag", "schedule", "comprehensive"]
+    # wait 表示规则已判断当前会话正等待客户回复，不会调用模型生成重复草稿。
+    intent: Literal["reply", "tag", "schedule", "comprehensive", "wait"]
     selected_tool: str
-    planned_by: Literal["bailian", "mock", "explicit_task"]
+    planned_by: Literal["bailian", "mock", "explicit_task", "rule_based"]
     planner_run_id: int | None = None
     human_confirmation_required: bool = True
     tool_trace: list[AgentToolTrace]

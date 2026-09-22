@@ -117,3 +117,27 @@ def test_accepted_reply_stays_pending_until_mock_message_is_sent():
     )
     assert pending_after_send.status_code == 200
     assert pending_after_send.json()["total"] == 0
+
+
+def test_profile_draft_can_be_rejected_from_the_unified_pending_action_endpoint():
+    headers, customer_id = _headers_and_customer()
+    with SessionLocal() as db:
+        profile = CustomerProfile(
+            customer_id=customer_id, version=1, status="draft",
+            dimensions_json={"next_action": "等待审阅"}, evidence_json=[],
+            model_name="test", model_version="1", prompt_version="test",
+        )
+        db.add(profile)
+        db.commit()
+        profile_id = profile.id
+
+    rejected = client.post(
+        f"/pending-actions/profile/{profile_id}/decision",
+        headers=headers,
+        json={"action": "rejected"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["closed"] is True
+    assert client.get("/pending-actions?action_type=profile", headers=headers).json()["total"] == 0
+    with SessionLocal() as db:
+        assert db.get(CustomerProfile, profile_id).status == "rejected"

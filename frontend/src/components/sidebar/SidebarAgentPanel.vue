@@ -30,6 +30,9 @@ const toolOptions = [
   { value: 'tags.analyze', label: '客户标签' },
   { value: 'course_openings.read', label: '课程开班' },
 ]
+const taskLabels: Record<string, string> = { auto: '自动判断', reply: '回复建议', tag: '标签建议', schedule: '日程建议', comprehensive: '综合分析', wait: '等待客户回复' }
+const toolLabels: Record<string, string> = Object.fromEntries(toolOptions.map((item) => [item.value, item.label]))
+function toolLabel(value: string | null | undefined): string { return toolLabels[value ?? ''] ?? '客户资料' }
 
 function submit(): void {
   if (props.customerId === null || props.busy) return
@@ -59,9 +62,8 @@ function sendFeedback(action: AgentFeedbackAction): void {
 
 <template>
   <section class="panel agent-panel">
-    <div class="panel-heading"><span>销售 Agent</span><small>受控 v3 · 五工具</small></div>
-    <p class="agent-help">综合分析会按步骤读取五类只读资料，再生成待人工编辑的草稿；不能直接发送消息或修改业务数据。</p>
-    <p class="agent-cost">回复、标签、日程是单目标流程；综合分析会展示每一步的资料状态和缺失信息。</p>
+    <div class="panel-heading"><span>销售助手</span><small>人工确认模式</small></div>
+    <p class="agent-help">助手会参考客户资料和历史记录生成草稿；不会自动发送消息或修改业务数据。</p>
     <label>任务类型
       <select v-model="task">
         <option value="auto">自动判断</option>
@@ -85,10 +87,11 @@ function sendFeedback(action: AgentFeedbackAction): void {
     </button>
     <p v-if="error" class="error">{{ error }}</p>
     <div v-if="result" class="agent-result">
-      <strong>本次目标：{{ result.intent }}</strong>
-      <span>受控工具：{{ result.selected_tool }} · {{ result.planned_by === 'explicit_task' ? '人工显式选择' : `规划器：${result.planned_by}` }}</span>
-      <span>下一步：{{ result.workflow.next_action || result.workflow.status }}</span>
-      <span v-if="result.workflow.status === 'queued' || result.workflow.status === 'running'" class="running-state">Worker 正在处理检查点…</span>
+      <strong>本次目标：{{ taskLabels[result.intent] ?? '客户分析' }}</strong>
+      <span v-if="result.intent === 'wait'" class="wait-state">销售消息已发送，暂不生成新回复</span>
+      <span v-else>已参考：{{ toolLabel(result.selected_tool) }}</span>
+      <p v-if="result.intent === 'wait'" class="wait-help">请等待客户的新消息；收到客户回复后，再运行“自动判断”即可生成下一步建议。</p>
+      <span v-if="result.workflow.status === 'queued' || result.workflow.status === 'running'" class="running-state">正在整理客户资料…</span>
       <span v-if="result.human_confirmation_required" class="human-gate">需要人工确认</span>
       <div v-if="result.workflow.status === 'failed'" class="retry-box">
         <span>本次运行失败；最多允许 {{ result.workflow.max_attempts }} 次执行，当前已尝试 {{ result.workflow.attempt_count }} 次。</span>
@@ -97,10 +100,10 @@ function sendFeedback(action: AgentFeedbackAction): void {
         </button>
       </div>
       <div v-if="result.steps.length" class="agent-steps">
-        <strong>逐步查询结果</strong>
+        <strong>资料参考情况</strong>
         <ol>
           <li v-for="step in result.steps" :key="`${step.step}-${step.tool_name}`" :class="step.status">
-            <span>{{ step.tool_name }}</span><small>{{ step.summary }}</small>
+            <span>{{ toolLabel(step.tool_name) }}</span><small>{{ step.summary }}</small>
           </li>
         </ol>
       </div>
@@ -130,10 +133,6 @@ function sendFeedback(action: AgentFeedbackAction): void {
         <small v-if="feedbackSent" class="feedback-success">反馈已记录</small>
       </div>
       <button v-if="result.workflow.status === 'queued' || result.workflow.status === 'running'" type="button" class="secondary" :disabled="!result.workflow.run_id" @click="control('pause')">请求暂停</button>
-      <details>
-        <summary>查看工具轨迹</summary>
-        <ul><li v-for="item in result.tool_trace" :key="item.name"><strong>{{ item.name }}</strong> · {{ item.detail }}</li></ul>
-      </details>
     </div>
   </section>
 </template>
@@ -147,6 +146,7 @@ label { display: grid; gap: 4px; color: #475569; font-size: 12px; } select, inpu
 .agent-result { display: grid; gap: 5px; padding: 10px; border-radius: 9px; color: #334155; background: #f8fafc; font-size: 12px; }.human-gate { color: #92400e; font-weight: 700; }.agent-result details { margin-top: 3px; }.agent-result ul { display: grid; gap: 5px; padding-left: 18px; color: #64748b; line-height: 1.4; }
 .retry-box { display: grid; gap: 7px; padding: 9px; border: 1px solid #fecaca; border-radius: 8px; color: #991b1b; background: #fff1f2; }
 .running-state { color: #1d4ed8; font-weight: 700; }
+.wait-state { color: #0f766e; font-weight: 700; }.wait-help { margin: 0; color: #475569; line-height: 1.45; }
 .agent-steps { display: grid; gap: 5px; margin-top: 4px; }.agent-steps ol { display: grid; gap: 6px; margin: 0; padding-left: 20px; }.agent-steps li { display: grid; gap: 2px; }.agent-steps li span { color: #334155; font-weight: 700; }.agent-steps li small { color: #64748b; line-height: 1.35; }.agent-steps li.incomplete { color: #b45309; }.agent-steps li.error { color: #b91c1c; }
 .agent-controls { display: grid; gap: 7px; margin-top: 4px; padding-top: 8px; border-top: 1px solid #e2e8f0; }.agent-controls p { margin: 0; color: #64748b; line-height: 1.4; }.skip-grid { display: grid; gap: 4px; grid-template-columns: repeat(2, minmax(0, 1fr)); }.skip-option { display: flex; align-items: center; gap: 5px; color: #475569; }.skip-option input { width: auto; }.control-actions { display: flex; flex-wrap: wrap; gap: 6px; }.secondary { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: #fff; cursor: pointer; }.secondary:disabled { opacity: .55; cursor: not-allowed; }
 .feedback-box { display: grid; gap: 7px; padding: 9px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; }.feedback-success { color: #15803d; }

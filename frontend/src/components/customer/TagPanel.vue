@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { CustomerTag } from '../../types/tag'
-import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
 
 const props = defineProps<{
   tags: CustomerTag[]
@@ -53,7 +52,6 @@ const tagStatusLabels: Record<string, string> = {
           </button>
         </div>
 
-        <AIEvidencePanel :evidence="item.evidence" />
       </li>
     </ul>
   </section>

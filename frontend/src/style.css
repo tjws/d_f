@@ -1,33 +1,101 @@
+/*
+ * 全局视觉基线：页面中的具体业务逻辑仍留在各自 Vue 组件，
+ * 这里仅统一颜色、间距、控件状态与常用信息容器，避免功能越多界面越零散。
+ */
 :root {
   --ink: #172033;
-  --muted: #718096;
-  --line: #e3e8ef;
+  --ink-soft: #334155;
+  --muted: #64748b;
+  --muted-light: #94a3b8;
+  --line: #dbe4f0;
+  --line-strong: #c5d3e4;
   --surface: #ffffff;
   --surface-soft: #f7f9fc;
+  --surface-tint: #f1f6ff;
   --brand: #2563eb;
-  --brand-dark: #1d4ed8;
-  --wecom: #07c160;
+  --brand-dark: #1e40af;
+  --brand-soft: #e8f0ff;
+  --teal: #0f766e;
   --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #a16207;
+  --warning-soft: #fef3c7;
   --danger: #be123c;
-  --shadow-sm: 0 8px 22px rgb(28 43 68 / 6%);
-  --shadow-lg: 0 22px 52px rgb(23 43 77 / 13%);
+  --danger-soft: #ffe4e6;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --shadow-sm: 0 8px 22px rgb(15 23 42 / 5%);
+  --shadow-card: 0 16px 38px rgb(15 23 42 / 7%);
+  --shadow-float: 0 22px 54px rgb(30 64 175 / 14%);
   font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
   color: var(--ink);
-  background: #eef4fb;
+  background: #f4f7fb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
 * { box-sizing: border-box; }
-body { min-width: 320px; margin: 0; background: #f4f7fb; }
+html { background: #f4f7fb; }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 2% -10%, rgb(37 99 235 / 12%), transparent 26rem),
+    linear-gradient(180deg, #f7faff 0, #f4f7fb 42rem);
+}
+
 button, input, select, textarea { font: inherit; }
-button { transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease; }
-button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgb(37 99 235 / 16%); }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid rgb(37 99 235 / 30%); outline-offset: 2px; }
+button { font-weight: 700; letter-spacing: .01em; transition: transform .16s ease, box-shadow .16s ease, filter .16s ease; }
+button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 9px 19px rgb(37 99 235 / 16%); filter: saturate(1.04); }
+button:disabled { cursor: not-allowed; }
+input, select, textarea { color: var(--ink); background-color: #fff; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+input::placeholder, textarea::placeholder { color: var(--muted-light); }
+input:hover, select:hover, textarea:hover { border-color: var(--line-strong); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid rgb(37 99 235 / 25%); outline-offset: 2px; }
+a { color: var(--brand); }
 h1, h2, h3, p { margin-top: 0; }
-h1, h2, h3 { color: var(--ink); letter-spacing: -.02em; }
+h1, h2, h3 { color: var(--ink); letter-spacing: -.025em; }
 #app { min-height: 100vh; }
 .muted { color: var(--muted); }
 .error { color: var(--danger); }
-@media (max-width: 700px) { body { font-size: 15px; } }
+.notice, .success { color: var(--success); }
+
+/* 管理页使用相同的信息密度和卡片语义；业务页可继续保留自己的内容布局。 */
+.admin-content .admin-page > .panel,
+.admin-content .admin-page > .summary,
+.admin-content .admin-page > .setting-card,
+.admin-content .admin-page > .document-card,
+.admin-content .admin-page > .script-card,
+.admin-content .admin-page > .batch-panel,
+.admin-content .admin-page > .risk-panel,
+.admin-content .admin-page > .trace-panel,
+.admin-content .admin-page > .action-panel,
+.admin-content .admin-page > .model-panel,
+.admin-content .admin-page > .empty.large,
+.admin-content .admin-page .cards > article,
+.admin-content .admin-page .grid-two > .panel {
+  border-color: var(--line) !important;
+  border-radius: var(--radius-md) !important;
+  background: linear-gradient(145deg, #fff, #fbfdff) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.admin-content .admin-page .filters,
+.admin-content .admin-page .risk-filters {
+  border-color: var(--line) !important;
+  border-radius: 14px !important;
+  background: rgb(255 255 255 / 82%) !important;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 3%);
+}
+
+.admin-content .admin-page th { color: var(--muted) !important; font-weight: 800; letter-spacing: .02em; }
+.admin-content .admin-page td { color: var(--ink-soft); }
+
+@media (max-width: 720px) {
+  body { font-size: 15px; }
+  .admin-content .admin-page .table-wrap,
+  .admin-content .admin-page .panel { overflow-x: auto; }
+}

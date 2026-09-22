@@ -19,6 +19,9 @@ class StudentDAO:
     def get_by_id(self, db: Session, customer_id: int, student_id: int) -> Student | None:
         return db.scalar(select(Student).where(Student.customer_id == customer_id, Student.id == student_id))
 
+    def get_any_by_id(self, db: Session, student_id: int) -> Student | None:
+        return db.get(Student, student_id)
+
     def archive(self, student: Student, archived_at: datetime) -> None:
         student.archived_at = archived_at
 

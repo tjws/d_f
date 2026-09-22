@@ -15,12 +15,15 @@ import AdminNavigation from '../components/admin/AdminNavigation.vue'
 <style scoped>
 .admin-layout {
   min-height: 100vh;
-  background: linear-gradient(180deg, #eef5ff 0, #f8fbff 300px);
+  background:
+    radial-gradient(circle at 100% 0, rgb(37 99 235 / 8%), transparent 27rem),
+    linear-gradient(180deg, #eef5ff 0, #f8fbff 320px);
 }
 
 .admin-content {
-  max-width: 1180px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 32px 6vw 64px;
+  padding: 36px 6vw 72px;
 }
+@media (max-width: 700px) { .admin-content { padding: 26px 18px 52px; } }
 </style>

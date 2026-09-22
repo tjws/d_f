@@ -1,5 +1,5 @@
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete
@@ -125,3 +125,23 @@ def test_context_builder_rejects_unknown_customer():
     with SessionLocal() as db:
         with pytest.raises(ValueError, match="customer 999999 not found"):
             build_customer_context(db, 999999)
+
+
+def test_context_builder_does_not_reuse_old_parent_question_after_sales_reply(context_customer_id):
+    """最新消息为销售发送时，RAG 不应回头检索更早的家长问题。"""
+
+    with SessionLocal() as db:
+        db.add(
+            ChatMessage(
+                customer_id=context_customer_id,
+                wecom_message_id="ai-context-outbound-latest",
+                direction="outbound",
+                message_type="text",
+                content_masked="销售已回复课程问题",
+                sent_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+            )
+        )
+        db.commit()
+        context = build_customer_context(db, context_customer_id)
+
+    assert context["knowledge_policy"]["query"] == ""

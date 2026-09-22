@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { ChatMessage, ChatMessageCreate, ChatMessageDirection, ChatMessageType } from '../../types/chatMessage'
 import type { TimelineEvent, TimelineEventCreate } from '../../types/timelineEvent'
 
@@ -8,6 +8,8 @@ const props = defineProps<{
   timelineEvents: TimelineEvent[]
   chatError?: string
   timelineError?: string
+  prefillText?: string
+  suggestionId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +25,35 @@ const mediaObjectKey = ref('')
 const timelineEventType = ref('manual_follow_up')
 const timelineSummary = ref('')
 
+const timelineEventLabels: Record<string, string> = {
+  wecom_message: '聊天消息',
+  manual_follow_up: '人工跟进记录',
+  schedule_created: '已创建跟进日程',
+  schedule_completed: '已完成跟进日程',
+  schedule_cancelled: '已取消跟进日程',
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('zh-CN')
+}
+
+function timelineEventLabel(eventType: string): string {
+  return timelineEventLabels[eventType] ?? '客户动态'
+}
+
+// 已接受的建议只负责预填；最终发送仍必须由销售在此处再次点击确认。
+watch(
+  () => props.prefillText,
+  (text) => {
+    if (!text) return
+    messageText.value = text
+    messageDirection.value = 'outbound'
+    messageType.value = 'text'
+  },
+  // 切到“沟通”页后组件才会创建；因此首次创建时也要立即读取已准备好的草稿。
+  { immediate: true },
+)
+
 function sendMessage(): void {
   const content = messageText.value.trim()
   if (messageType.value === 'text' && !content) return
@@ -30,6 +61,7 @@ function sendMessage(): void {
 
   emit('sendMessage', {
     wecom_message_id: `mock-${Date.now()}`,
+    suggestion_id: props.suggestionId ?? null,
     direction: messageDirection.value,
     message_type: messageType.value,
     content: content || null,
@@ -61,7 +93,7 @@ function createTimelineEvent(): void {
         <div v-for="message in props.messages" :key="message.id" class="message">
           <strong>{{ message.direction === 'inbound' ? '客户' : '销售' }}</strong>
           <p>{{ message.content_masked || message.content || '[非文本消息]' }}</p>
-          <small>{{ message.sent_at }}</small>
+          <small>{{ formatDateTime(message.sent_at) }}</small>
           <button v-if="message.message_type === 'voice' && !message.content" type="button" class="inline-button" @click="emit('transcribeMessage', message.id)">Mock 转写</button>
         </div>
 
@@ -80,9 +112,10 @@ function createTimelineEvent(): void {
               <option value="file">文件（仅索引）</option>
             </select>
           </label>
-          <textarea v-model="messageText" rows="3" placeholder="Mock 输入一条消息" />
+          <p v-if="props.suggestionId" class="ready-note">已放入一条人工接受的建议。请检查内容后再确认发送。</p>
+          <textarea v-model="messageText" rows="7" :placeholder="props.suggestionId ? '请检查后再手动发送给家长' : '输入一条消息'" />
           <input v-if="messageType !== 'text'" v-model="mediaObjectKey" placeholder="媒体对象 key，例如 mock-voice:家长想了解课程" />
-          <button type="button" :disabled="messageType === 'text' ? !messageText.trim() : !mediaObjectKey.trim()" @click="sendMessage">写入 Mock 消息</button>
+          <button type="button" :disabled="messageType === 'text' ? !messageText.trim() : !mediaObjectKey.trim()" @click="sendMessage">{{ messageDirection === 'outbound' ? '确认 Mock 发送' : '记录客户消息' }}</button>
         </div>
       </div>
 
@@ -92,9 +125,9 @@ function createTimelineEvent(): void {
         <p v-if="props.timelineError" class="error">{{ props.timelineError }}</p>
         <p v-if="props.timelineEvents.length === 0" class="muted">暂无时间线事件。</p>
         <div v-for="event in props.timelineEvents" :key="event.id" class="event">
-          <strong>{{ event.event_type }}</strong>
+          <strong>{{ timelineEventLabel(event.event_type) }}</strong>
           <p>{{ event.summary }}</p>
-          <small>{{ event.occurred_at }}</small>
+          <small>{{ formatDateTime(event.occurred_at) }}</small>
         </div>
         <div class="composer">
           <label>事件类型
@@ -118,7 +151,7 @@ function createTimelineEvent(): void {
 
 .columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 24px;
 }
 
@@ -146,6 +179,8 @@ h2 {
 .message p,
 .event p {
   margin: 5px 0;
+  white-space: pre-wrap;
+  line-height: 1.65;
 }
 
 small,
@@ -155,6 +190,10 @@ small,
 
 .composer {
   margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
 }
 
 label {
@@ -184,6 +223,13 @@ textarea {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.composer textarea {
+  min-height: 156px;
+  background: white;
 }
 
 button {
@@ -209,6 +255,15 @@ button:disabled {
 
 .error {
   color: #dc2626;
+}
+
+.ready-note {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #166534;
+  background: #f0fdf4;
+  font-size: 13px;
 }
 
 @media (max-width: 760px) {

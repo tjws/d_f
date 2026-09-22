@@ -33,6 +33,7 @@ import {
   listChatMessages,
   transcribeChatMessage,
 } from '../api/chatMessages'
+import { sortChatMessagesForDisplay } from '../utils/chatMessages'
 import {
   createTimelineEvent,
   listTimelineEvents,
@@ -157,7 +158,7 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
   async function loadChatMessages(): Promise<void> {
     try {
       clearError('chat')
-      chatMessages.value = await listChatMessages(currentId())
+      chatMessages.value = sortChatMessagesForDisplay(await listChatMessages(currentId()))
     } catch (error) {
       setError('chat', error)
     }
@@ -282,16 +283,20 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
   ): Promise<void> {
     await updateCustomerProfile(currentId(), profileId, payload)
     await loadProfiles()
+    workflowNotice.value = '客户画像已保存为人工编辑版本。请核对内容后再决定是否确认。'
   }
 
   async function confirmProfile(profileId: number): Promise<void> {
     await confirmCustomerProfile(currentId(), profileId)
     await loadProfiles()
+    // 确认只更新客户档案；下一步是否调用模型仍由销售人员主动决定。
+    workflowNotice.value = '客户画像已确认并更新客户档案。下一步可手动生成回复建议、查看沟通记录或安排跟进。'
   }
 
   async function rejectProfile(profileId: number): Promise<void> {
     await rejectCustomerProfile(currentId(), profileId)
     await loadProfiles()
+    workflowNotice.value = '客户画像草稿已拒绝，客户正式档案未发生变化。'
   }
 
   async function generateReplyDraft(): Promise<void> {
@@ -359,16 +364,19 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
   ): Promise<void> {
     await updateAISuggestion(currentId(), suggestionId, payload)
     await loadSuggestions()
+    workflowNotice.value = '回复建议已保存为人工编辑版本。请核对内容后，接受建议或继续修改。'
   }
 
   async function acceptSuggestion(suggestionId: number): Promise<void> {
     await acceptAISuggestion(currentId(), suggestionId)
     await Promise.all([loadSuggestions(), loadTimelineEvents()])
+    workflowNotice.value = '回复建议已接受，尚未发送给家长。下一步请放入聊天输入框，检查后再由你确认发送。'
   }
 
   async function rejectSuggestion(suggestionId: number): Promise<void> {
     await rejectAISuggestion(currentId(), suggestionId)
     await Promise.all([loadSuggestions(), loadTimelineEvents()])
+    workflowNotice.value = '回复建议已拒绝，没有向家长发送任何内容。你可以重新生成建议，或直接人工回复。'
   }
 
   async function generateTagSuggestions(): Promise<void> {
@@ -378,11 +386,13 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
   async function confirmTag(customerTagId: number): Promise<void> {
     await confirmCustomerTag(currentId(), customerTagId)
     await Promise.all([loadTags(), loadTimelineEvents()])
+    workflowNotice.value = '客户标签已确认并同步到客户档案。下一步可继续处理回复建议或安排跟进。'
   }
 
   async function rejectTag(customerTagId: number): Promise<void> {
     await rejectCustomerTag(currentId(), customerTagId)
     await Promise.all([loadTags(), loadTimelineEvents()])
+    workflowNotice.value = '标签建议已拒绝，客户正式标签没有变化。'
   }
 
   async function generateScheduleSuggestion(): Promise<void> {
@@ -400,6 +410,7 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
   async function confirmSchedule(suggestionId: number): Promise<void> {
     await confirmScheduleSuggestion(currentId(), suggestionId)
     await Promise.all([loadScheduleSuggestions(), loadSchedules(), loadTimelineEvents()])
+    workflowNotice.value = '跟进日程已确认并写入日程表。请在约定时间完成跟进，再记录结果。'
   }
 
   async function editSchedule(
@@ -426,6 +437,9 @@ export function useCustomerWorkspace(customerId: Ref<number>) {
       await createMockChatMessage(currentId(), payload)
       // 聊天写入会由后端事务同步生成时间线事件，因此两边一起刷新。
       await Promise.all([loadChatMessages(), loadTimelineEvents()])
+      workflowNotice.value = payload.direction === 'outbound'
+        ? '消息已由你确认发送，聊天记录和客户时间线已同步更新。下一步可等待家长回复或安排后续跟进。'
+        : '家长消息已记录，客户时间线已同步更新。你可以生成回复建议，或直接人工回复。'
     } catch (error) {
       setError('chat', error)
     }

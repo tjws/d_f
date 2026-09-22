@@ -10,6 +10,7 @@ from app.services.ai_workflow_service import execute_ai_workflow_run
 from app.services.comprehensive_agent_service import execute_comprehensive_agent_run
 from app.workers.broker import broker  # noqa: F401 先配置 broker，再声明 actor。
 from app.workers.knowledge_tasks import index_knowledge_document_task  # noqa: F401 注册知识库索引任务。
+from app.workers.churn_tasks import execute_churn_scoring_task  # noqa: F401 注册流失评分任务。
 
 
 @dramatiq.actor(queue_name="ai_workflow", max_retries=0, time_limit=30_000)

@@ -20,6 +20,8 @@ import AdminTagsView from '../views/admin/AdminTagsView.vue'
 import AdminOperationsView from '../views/admin/AdminOperationsView.vue'
 import AdminPermissionsView from '../views/admin/AdminPermissionsView.vue'
 import AdminDataExportView from '../views/admin/AdminDataExportView.vue'
+import ChurnRiskView from '../views/admin/ChurnRiskView.vue'
+import SalesRiskView from '../views/SalesRiskView.vue'
 import LoginView from '../views/LoginView.vue'
 import PendingActionsView from '../views/PendingActionsView.vue'
 import MyWorkView from '../views/MyWorkView.vue'
@@ -66,6 +68,12 @@ const router = createRouter({
       path: '/my-work',
       name: 'my-work',
       component: MyWorkView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/churn-risks',
+      name: 'churn-risks',
+      component: SalesRiskView,
       meta: { requiresAuth: true },
     },
     {
@@ -154,6 +162,11 @@ const router = createRouter({
           name: 'admin-ai-rollout',
           component: AIRolloutView,
         },
+        {
+          path: 'churn-risks',
+          name: 'admin-churn-risks',
+          component: ChurnRiskView,
+        },
       ],
     },
   ],
@@ -168,7 +181,7 @@ router.beforeEach((to) => {
   }
 
   if (to.name === 'login' && hasAccessToken()) {
-    return { name: 'customers' }
+    return { name: 'my-work' }
   }
 
   return true

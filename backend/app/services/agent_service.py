@@ -25,6 +25,56 @@ logger = logging.getLogger("k12.ai")
 workflow_run_dao = AIWorkflowRunDAO()
 
 
+def _waiting_for_customer_response(
+    db: Session,
+    customer_id: int,
+    current_user: User,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """自动模式的会话轮次保护：销售刚发过消息时不再生成重复回复。"""
+
+    planning_run = _create_planning_run(db, customer_id, current_user.id, "rule_based")
+    _finish_planning_run(db, planning_run, selected_tool="wait_for_customer_reply")
+    logger.info(
+        "sales_agent_waiting_for_customer_reply",
+        extra={
+            "event": "sales_agent_waiting_for_customer_reply",
+            "run_id": planning_run.id,
+            "customer_id": customer_id,
+            "provider_name": "rule_based",
+        },
+    )
+    # 这不是 AI 工作流，因此用最小的已完成状态承载界面提示；不会创建建议、
+    # 不会调用百炼，也不会改变客户或消息数据。
+    return {
+        "agent_name": "sales-copilot-v2",
+        "intent": "wait",
+        "selected_tool": "wait_for_customer_reply",
+        "planned_by": "rule_based",
+        "planner_run_id": planning_run.id,
+        "human_confirmation_required": True,
+        "tool_trace": allowed_tool_trace(snapshot, "wait_for_customer_reply"),
+        "workflow": {
+            "customer_id": customer_id,
+            "run_id": planning_run.id,
+            "status": "waiting_human",
+            "suggestion_ids": [],
+            "customer_tag_ids": [],
+            "profile_id": None,
+            "next_action": None,
+            "error": None,
+            "attempt_count": 1,
+            "max_attempts": 1,
+            "retryable": False,
+        },
+        "metadata": {
+            "provider_mode": "conversation_turn_guard",
+            "conversation_state": snapshot["conversation_state"],
+            "next_step": "wait_for_customer_reply",
+        },
+    }
+
+
 def _create_planning_run(db: Session, customer_id: int, actor_user_id: int, provider_name: str) -> AIWorkflowRun:
     """把一次外部规划调用落为最小可观察记录，不保存指令或模型推理。"""
 
@@ -106,6 +156,10 @@ def run_sales_agent(
     snapshot = read_customer_snapshot(db, customer_id)
     planner_run_id: int | None = None
     if payload.task == "auto":
+        # 必须先做不调用模型的会话轮次判断：最后一条销售消息尚未收到客户回应时，
+        # 继续生成回复不仅无用，还会诱导销售重复发送。
+        if snapshot["conversation_state"] == "waiting_customer_reply":
+            return _waiting_for_customer_response(db, customer_id, current_user, snapshot)
         planner = get_agent_planner()
         # 自动模式要预留“规划 + 生成草稿”两次百炼调用，避免只完成前半步。
         if planner.provider_name == "bailian":

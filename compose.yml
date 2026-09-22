@@ -71,6 +71,11 @@ services:
       BACKUP_DIRECTORY: /app/backend/backups
       BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-24}
       BACKUP_PRUNE_ENABLED: ${BACKUP_PRUNE_ENABLED:-0}
+      CHURN_MODEL_DIRECTORY: /app/backend/data/churn_artifacts
+      CHURN_IMPORT_DIRECTORY: /app/backend/data/churn_imports
+      CHURN_DISTRIBUTION_DRIFT_THRESHOLD: ${CHURN_DISTRIBUTION_DRIFT_THRESHOLD:-0.15}
+      CHURN_SCORING_SCHEDULE_ENABLED: ${CHURN_SCORING_SCHEDULE_ENABLED:-0}
+      CHURN_SCORING_INTERVAL_SECONDS: ${CHURN_SCORING_INTERVAL_SECONDS:-86400}
     # 镜像工作目录是 /app/backend，而 alembic.ini 位于仓库根 /app。
     command: ["python", "-m", "alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
     working_dir: /app
@@ -89,6 +94,8 @@ services:
       - "8001:8000"
     volumes:
       - ./backend/backups:/app/backend/backups
+      - ./backend/data/churn_artifacts:/app/backend/data/churn_artifacts
+      - ./backend/data/churn_imports:/app/backend/data/churn_imports:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +112,9 @@ services:
     environment:
       <<: *backend_environment
     command: ["dramatiq", "app.workers.ai_workflow_tasks", "--processes", "1", "--threads", "2"]
+    volumes:
+      - ./backend/data/churn_artifacts:/app/backend/data/churn_artifacts:ro
+      - ./backend/data/churn_imports:/app/backend/data/churn_imports:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,6 +122,23 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    profiles: ["app"]
+
+  churn-scheduler:
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    environment:
+      <<: *backend_environment
+    command: ["python", "-m", "scripts.run_churn_scheduler"]
+    volumes:
+      - ./backend/data/churn_artifacts:/app/backend/data/churn_artifacts:ro
+      - ./backend/data/churn_imports:/app/backend/data/churn_imports:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     profiles: ["app"]
 
   frontend:

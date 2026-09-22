@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,43 @@ class ChatMessageConflict(ValueError):
 _PHONE_PATTERN = re.compile(r"(?<!\d)1\d{10}(?!\d)")
 chat_message_dao = ChatMessageDAO()
 timeline_event_dao = TimelineEventDAO()
+
+
+def _normalized_message_text(value: str) -> str:
+    """比较人工发送文本时忽略空白差异，便于保留建议到消息的追溯关系。"""
+
+    return " ".join(value.split())
+
+
+def _infer_accepted_reply_suggestion(
+    db: Session,
+    customer_id: int,
+    content: str | None,
+) -> AISuggestion | None:
+    """销售手动复制已接受话术时，仍尝试关联到唯一的同文建议。
+
+    这是“建议 -> 人工发送”审计链的兜底，不会接受草稿、不会改写消息，且只在
+    内容与已接受建议完全一致时才生效。
+    """
+
+    if not content:
+        return None
+    expected = _normalized_message_text(content)
+    candidates = db.scalars(
+        select(AISuggestion)
+        .where(
+            AISuggestion.customer_id == customer_id,
+            AISuggestion.suggestion_type == "reply",
+            AISuggestion.status == "accepted",
+        )
+        .order_by(AISuggestion.decided_at.desc(), AISuggestion.id.desc())
+    ).all()
+    for candidate in candidates:
+        payload = candidate.edited_content_json or candidate.content_json
+        text = payload.get("text") if isinstance(payload, dict) else None
+        if isinstance(text, str) and _normalized_message_text(text) == expected:
+            return candidate
+    return None
 
 
 def mask_sensitive_text(value: str) -> str:
@@ -81,10 +119,14 @@ def create_chat_message(
     )
 
     suggestion = None
-    if payload.suggestion_id is not None:
+    resolved_suggestion_id = payload.suggestion_id
+    if resolved_suggestion_id is None and payload.direction.value == "outbound":
+        suggestion = _infer_accepted_reply_suggestion(db, customer_id, payload.content)
+        resolved_suggestion_id = suggestion.id if suggestion is not None else None
+    if resolved_suggestion_id is not None:
         if payload.direction.value != "outbound":
             raise ChatMessageConflict("AI suggestion links are only valid for outbound messages")
-        suggestion = db.get(AISuggestion, payload.suggestion_id)
+        suggestion = suggestion or db.get(AISuggestion, resolved_suggestion_id)
         if suggestion is None or suggestion.customer_id != customer_id:
             raise ChatMessageConflict("AI suggestion does not belong to this customer")
         if suggestion.suggestion_type != "reply" or suggestion.status != "accepted":
@@ -93,7 +135,7 @@ def create_chat_message(
     message = ChatMessage(
         customer_id=customer_id,
         user_id=current_user.id,
-        suggestion_id=payload.suggestion_id,
+        suggestion_id=resolved_suggestion_id,
         wecom_message_id=payload.wecom_message_id,
         direction=payload.direction.value,
         message_type=payload.message_type.value,

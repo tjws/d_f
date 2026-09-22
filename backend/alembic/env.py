@@ -40,6 +40,11 @@ from app.models.ai_rag_interaction import AIRagInteraction
 from app.models.rag_evaluation_case import RAGEvaluationCase
 from app.models.ai_rollout_membership import AIRolloutMembership
 from app.models.ai_rollout_daily_report import AIRolloutDailyReport
+from app.models.churn_scoring_batch import ChurnScoringBatch
+from app.models.churn_risk_prediction import ChurnRiskPrediction
+from app.models.external_student_mapping import ExternalStudentMapping
+from app.models.churn_risk_intervention import ChurnRiskIntervention
+from app.models.churn_model_version import ChurnModelVersion
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

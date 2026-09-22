@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.audit_log import AuditLog
+from app.models.ai_suggestion import AISuggestion
 from app.models.chat_message import ChatMessage
 from app.models.customer import Customer
 from app.models.organization import Organization
@@ -125,6 +126,43 @@ def test_create_list_and_deduplicate_chat_messages(auth_headers):
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
     assert list_response.json()[0]["content"] == content
+
+
+def test_manual_copy_of_accepted_reply_is_linked_to_the_original_suggestion(auth_headers):
+    customer_id = _create_customer(auth_headers)
+    reply = "您好，已为您安排试听课程的介绍。"
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == "chat_owner"))
+        assert user is not None
+        suggestion = AISuggestion(
+            customer_id=customer_id,
+            user_id=user.id,
+            suggestion_type="reply",
+            content_json={"text": reply},
+            evidence_json=[],
+            evidence_level="sufficient",
+            status="accepted",
+            model_name="test",
+            model_version="test",
+            prompt_version="test",
+        )
+        db.add(suggestion)
+        db.commit()
+        suggestion_id = suggestion.id
+
+    sent = client.post(
+        f"/customers/{customer_id}/chat-messages/mock",
+        headers=auth_headers,
+        json={
+            "wecom_message_id": "manual-copy-reply",
+            "direction": "outbound",
+            "message_type": "text",
+            "content": reply,
+        },
+    )
+
+    assert sent.status_code == 201
+    assert sent.json()["suggestion_id"] == suggestion_id
 
 
 def test_chat_messages_require_authentication():

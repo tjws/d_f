@@ -2,8 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import type { AISuggestion, AISuggestionUpdate } from '../../types/aiSuggestion'
 import type { Schedule, ScheduleCompletion, ScheduleOutcome } from '../../types/schedule'
-import AIEvidencePanel from '../ai/AIEvidencePanel.vue'
-import AIModelMeta from '../ai/AIModelMeta.vue'
 
 const props = defineProps<{
   suggestions: AISuggestion[]
@@ -19,7 +17,13 @@ const emit = defineEmits<{
   cancel: [scheduleId: number]
 }>()
 
-const currentSuggestion = computed(() => props.suggestions[0] ?? null)
+// 只有未处理的建议可编辑；已确认的建议已成为正式日程，不能继续作为草稿展示。
+const actionableSuggestions = computed(() =>
+  props.suggestions.filter((item) => item.status === 'draft' || item.status === 'edited'),
+)
+const currentSuggestion = computed(() => actionableSuggestions.value[0] ?? null)
+const activeSchedules = computed(() => props.schedules.filter((item) => item.status === 'confirmed'))
+const historySchedules = computed(() => props.schedules.filter((item) => item.status !== 'confirmed'))
 const title = ref('')
 const description = ref('')
 const dueAt = ref('')
@@ -45,13 +49,25 @@ function submitCompletion(scheduleId: number): void {
   completingId.value = null
 }
 
+function toDateTimeLocal(value: unknown): string {
+  if (typeof value !== 'string' || !value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('zh-CN')
+}
+
 watch(
   currentSuggestion,
   (suggestion) => {
     const content = suggestion?.edited_content ?? suggestion?.content
     title.value = String(content?.title ?? '')
     description.value = String(content?.description ?? '')
-    dueAt.value = String(content?.due_at ?? '')
+    dueAt.value = toDateTimeLocal(content?.due_at)
     const value = String(content?.priority ?? 'normal')
     priority.value = value === 'low' || value === 'high' ? value : 'normal'
   },
@@ -87,15 +103,8 @@ function saveSuggestion(): void {
 
     <p v-if="props.error" class="error">{{ props.error }}</p>
 
-    <div v-for="item in props.suggestions" :key="item.id" class="suggestion">
-      <AIModelMeta
-        :meta="{
-          model_name: item.model_name,
-          model_version: item.model_version,
-          created_at: item.created_at,
-          evidence_level: item.evidence_level,
-        }"
-      />
+    <div v-if="currentSuggestion" class="suggestion">
+      <p class="suggestion-note">AI 建议，请确认内容与时间后再创建正式日程。</p>
       <label>
         标题
         <input v-model="title" type="text" />
@@ -118,25 +127,23 @@ function saveSuggestion(): void {
       </label>
       <button type="button" @click="saveSuggestion">保存编辑</button>
       <button
-        v-if="item.status === 'draft' || item.status === 'edited'"
         type="button"
         class="success"
-        @click="emit('confirm', item.id)"
+        @click="emit('confirm', currentSuggestion.id)"
       >
         确认生成正式日程
       </button>
-      <AIEvidencePanel :evidence="item.evidence" />
     </div>
 
-    <p v-if="props.suggestions.length === 0" class="muted">
-      暂无日程建议。
+    <p v-if="!currentSuggestion" class="muted">
+      暂无待确认日程建议。你可以按需要生成新的跟进建议。
     </p>
 
-    <h3>正式日程</h3>
-    <div v-for="schedule in props.schedules" :key="schedule.id" class="schedule">
+    <h3>当前正式日程</h3>
+    <div v-for="schedule in activeSchedules" :key="schedule.id" class="schedule">
       <div>
         <strong>{{ schedule.title }}</strong>
-        <p>{{ schedule.due_at }} · {{ schedule.priority }} · {{ scheduleStatusLabels[schedule.status] ?? schedule.status }}</p>
+        <p>{{ formatDateTime(schedule.due_at) }} · {{ schedule.priority }} · {{ scheduleStatusLabels[schedule.status] ?? schedule.status }}</p>
         <p v-if="schedule.status === 'completed'" class="completion-summary">人工结果：{{ outcomeLabels[schedule.outcome as ScheduleOutcome] ?? schedule.outcome ?? '其他结果' }}<span v-if="schedule.completion_note"> · {{ schedule.completion_note }}</span></p>
       </div>
       <div class="actions" v-if="schedule.status === 'confirmed'">
@@ -154,9 +161,17 @@ function saveSuggestion(): void {
       </form>
     </div>
 
-    <p v-if="props.schedules.length === 0" class="muted">
+    <p v-if="activeSchedules.length === 0" class="muted">
       暂无正式日程。
     </p>
+
+    <details v-if="historySchedules.length" class="schedule-history">
+      <summary>已完成或已取消的历史日程（{{ historySchedules.length }}）</summary>
+      <div v-for="schedule in historySchedules" :key="schedule.id" class="history-item">
+        <strong>{{ schedule.title }}</strong>
+        <span>{{ formatDateTime(schedule.due_at) }} · {{ scheduleStatusLabels[schedule.status] ?? '已处理' }}</span>
+      </div>
+    </details>
   </section>
 </template>
 
@@ -226,6 +241,7 @@ button {
   margin: 6px 0;
   color: #64748b;
 }
+.suggestion-note { color: #9a3412 !important; font-size: 13px; }
 
 label {
   display: block;
@@ -257,4 +273,5 @@ select {
 
 .completion-form { display: grid; gap: 7px; width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid #fed7aa; }
 .secondary { margin-left: 8px; color: #475569; background: #e2e8f0; }
+.schedule-history { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px; }.schedule-history summary { cursor: pointer; font-weight: 600; }.history-item { display: grid; gap: 4px; margin-top: 9px; padding: 9px; border-radius: 8px; background: #f8fafc; }.history-item span { font-size: 12px; }
 </style>

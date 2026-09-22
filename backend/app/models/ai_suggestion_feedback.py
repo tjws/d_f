@@ -11,7 +11,15 @@ from app.db.base import Base
 
 class AISuggestionFeedback(Base):
     __tablename__ = "ai_suggestion_feedback"
-    __table_args__ = (UniqueConstraint("target_type", "target_id", name="uq_ai_suggestion_feedback_target"),)
+    # 目标编号可能在历史导入或恢复演练后跨客户复用，因此必须连同客户范围判重。
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_id",
+            "target_type",
+            "target_id",
+            name="uq_ai_suggestion_feedback_customer_target",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     suggestion_id: Mapped[int | None] = mapped_column(ForeignKey("ai_suggestions.id", ondelete="CASCADE"), nullable=True, index=True)

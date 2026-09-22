@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -114,3 +115,36 @@ def test_sales_agent_respects_customer_scope():
         json={"task": "reply"},
     )
     assert denied.status_code == 404
+
+
+def test_auto_agent_waits_after_latest_sales_message_instead_of_generating_reply():
+    register = client.post("/auth/register", json={"username": "agent_wait", "password": "Test123!"})
+    assert register.status_code == 201
+    login = client.post("/auth/token", data={"username": "agent_wait", "password": "Test123!"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    customer = client.post("/customers", headers=headers, json={"name": "等待回复客户", "phone": "13800138002"})
+    customer_id = customer.json()["id"]
+
+    # 本用例只验证会话轮次，不需要再跑一遍回复工作流；直接准备一条已发送消息，
+    # 模拟销售完成了人工审核与发送后的真实状态。
+    with SessionLocal() as db:
+        db.add(
+            ChatMessage(
+                customer_id=customer_id,
+                user_id=1,
+                wecom_message_id="agent-wait-outbound",
+                direction="outbound",
+                message_type="text",
+                content_masked="您好，课程安排如下。",
+                sent_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+
+    response = client.post(f"/customers/{customer_id}/agent/run", headers=headers, json={"task": "auto"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "wait"
+    assert body["selected_tool"] == "wait_for_customer_reply"
+    assert body["planned_by"] == "rule_based"
+    assert body["workflow"]["suggestion_ids"] == []

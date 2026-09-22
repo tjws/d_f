@@ -7,3 +7,5 @@ AGENTS.md
 docs/*
 infra/local.env
 backend/backups/
+backend/data/churn_artifacts/
+backend/data/churn_imports/

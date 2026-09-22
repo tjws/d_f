@@ -65,7 +65,13 @@ def _knowledge_step(
     actor_user_id: int | None = None,
 ) -> ComprehensiveToolResult:
     messages = chat_message_dao.list_by_customer(db, customer_id)
-    latest_inbound = next((message.content_masked for message in messages if message.direction == "inbound"), "")
+    # 只允许用当前会话轮次中的最新家长消息检索资料，避免综合 Agent 引用已回复的旧问题。
+    latest_message = messages[0] if messages else None
+    latest_inbound = (
+        latest_message.content_masked
+        if latest_message is not None and latest_message.direction == "inbound"
+        else ""
+    )
     started = perf_counter()
     result = retrieve_knowledge(
         latest_inbound,

@@ -54,7 +54,14 @@ def build_customer_context(
     messages = chat_message_dao.list_by_customer(db, customer_id)
     timeline_events = timeline_event_dao.list_by_customer(db, customer_id)
     completed_follow_ups = schedule_dao.list_completed_by_customer(db, customer_id)
-    latest_inbound = next((message.content_masked for message in reversed(messages) if message.direction == "inbound"), "")
+    # 消息 DAO 按发送时间倒序返回。只有会话最后一条确实来自客户时，才把它
+    # 作为本次回复/RAG 的问题；不能回头拿历史来信生成重复回复。
+    latest_message = messages[0] if messages else None
+    latest_inbound = (
+        latest_message.content_masked
+        if latest_message is not None and latest_message.direction == "inbound"
+        else ""
+    )
     # 运营人员可以调整召回条数，但异常值会在 DAO 中回退为安全默认值。
     knowledge_limit = system_setting_dao.get_global_int(db, "knowledge_max_results", 4)
     actor = db.get(User, actor_user_id) if actor_user_id is not None else None

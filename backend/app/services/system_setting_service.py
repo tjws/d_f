@@ -10,7 +10,8 @@ from app.services.audit_log_service import append_audit_log
 
 setting_dao = SystemSettingDAO()
 ALLOWED_SETTINGS = {
-    "ai_daily_bailian_request_limit": (0, 1000),
+    # 手动验收阶段可能需要高于日常运营的额度；实际百炼账户额度仍由平台控制。
+    "ai_daily_bailian_request_limit": (0, 9999),
     "knowledge_max_results": (1, 20),
     "default_follow_up_days": (1, 90),
 }

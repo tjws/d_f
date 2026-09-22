@@ -42,6 +42,7 @@ from app.api.admin_operations import router as admin_operations_router
 from app.api.admin_permissions import router as admin_permissions_router
 from app.api.admin_data_export import router as admin_data_export_router
 from app.api.admin_retention import router as admin_retention_router
+from app.api.churn_risks import router as churn_risks_router
 from app.db.session import engine
 from app.knowledge.qdrant_store import get_qdrant_client
 from app.core.request_context import set_actor_user_id, set_request_id
@@ -133,6 +134,7 @@ app.include_router(admin_operations_router)
 app.include_router(admin_permissions_router)
 app.include_router(admin_data_export_router)
 app.include_router(admin_retention_router)
+app.include_router(churn_risks_router)
 
 @app.get("/")
 def read_root():

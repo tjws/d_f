@@ -164,9 +164,9 @@ watch(() => route.query.stage, (value) => {
 <style scoped>
 .customer-page {
   min-height: 100vh;
-  padding: 48px 6vw 72px;
+  padding: 38px 6vw 72px;
   color: #1f2937;
-  background: linear-gradient(180deg, #eef5ff 0, #f8fbff 320px);
+  background: radial-gradient(circle at 92% 0, rgb(37 99 235 / 10%), transparent 26rem), linear-gradient(180deg, #eef5ff 0, #f8fbff 340px);
 }
 
 .page-header {
@@ -175,7 +175,12 @@ watch(() => route.query.stage, (value) => {
   justify-content: space-between;
   gap: 24px;
   max-width: 1080px;
-  margin: 0 auto 32px;
+  margin: 0 auto 24px;
+  padding: 26px 28px;
+  border: 1px solid rgb(255 255 255 / 82%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 76%);
+  box-shadow: var(--shadow-sm);
 }
 
 .eyebrow {
@@ -193,7 +198,10 @@ h1 {
 }
 
 .description {
+  max-width: 620px;
+  margin-bottom: 0;
   color: #64748b;
+  line-height: 1.65;
 }
 
 .header-actions {
@@ -206,15 +214,15 @@ h1 {
   flex-wrap: wrap;
   gap: 8px;
   max-width: 960px;
-  margin: 0 auto 10px;
+  margin: 0 auto 14px;
 }
 
 .stage-filters a {
   padding: 8px 13px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #d6e0ed;
   border-radius: 999px;
   color: #475569;
-  background: #fff;
+  background: rgb(255 255 255 / 82%);
   text-decoration: none;
 }
 
@@ -260,18 +268,18 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 20px 24px;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, #fff, #fbfdff);
   color: inherit;
   text-decoration: none;
-  box-shadow: 0 8px 24px rgb(30 64 175 / 5%);
+  box-shadow: var(--shadow-sm);
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
 
-.customer-card:hover { transform: translateY(-2px); border-color: #93c5fd; box-shadow: 0 14px 30px rgb(30 64 175 / 11%); }
+.customer-card:hover { transform: translateY(-2px); border-color: #93c5fd; box-shadow: var(--shadow-card); }
 
 .customer-card h2 {
   margin: 0 0 6px;
@@ -312,4 +320,5 @@ h1 {
 .state-message.error {
   color: #dc2626;
 }
+@media (max-width: 650px) { .customer-page { padding: 22px 18px 48px; }.page-header { align-items: flex-start; flex-direction: column; padding: 22px; }.header-actions { width: 100%; }.header-actions button { flex: 1; }.customer-card { align-items: flex-start; flex-direction: column; }.customer-meta { align-items: flex-start; } }
 </style>

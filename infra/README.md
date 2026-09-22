@@ -373,3 +373,19 @@ UTC `start/end` 和最多 10000 条记录。经理和销售不能访问导出接
 `content_encrypted`；AI 编辑正文只导出“是否存在”标记。每次导出都会写入
 `admin.data_exported` 审计日志。当前策略不自动删除数据，也不擅自规定具体保留天数；
 客户确认保留周期后，再配置定时清理和删除前复核流程。
+
+### 客户流失风险定时评分
+
+`worker` 同时注册 `churn_scoring` 队列；`churn-scheduler` 只负责定期把最新导入文件投递到
+Redis，不直接计算模型。两个目录通过 Compose 挂载：
+
+- `backend/data/churn_artifacts`：模型产物，Backend 可登记，Worker 只读。
+- `backend/data/churn_imports`：待评分 CSV，Backend、Worker 和 Scheduler 都只读。
+
+安全默认值是 `CHURN_SCORING_SCHEDULE_ENABLED=0`。准备好 CSV、在管理页面登记并审批模型后，
+才可在 `infra/local.env` 中显式改为 `1` 并重启 `churn-scheduler`。重复投递同一模型、同一数据
+指纹和同一来源不会重复生成统计批次。页面上的漂移告警只比较风险等级分布，不能解释为模型
+准确率或真实流失概率。
+
+历史清理脚本默认只预览。只有人工检查预计数量后添加 `--apply` 才会级联删除旧批次及其预测、
+干预记录；客户、学生、日程和时间线不随评分批次删除。

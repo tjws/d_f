@@ -37,9 +37,7 @@ def record_target_feedback(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="AI 反馈目标无效")
     if action not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="AI 反馈操作无效")
-    feedback = feedback_dao.get_by_target(db, target_type, target_id)
-    if feedback is not None and feedback.customer_id != customer_id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AI 反馈目标不属于当前客户")
+    feedback = feedback_dao.get_by_target(db, customer_id, target_type, target_id)
     if feedback is None:
         feedback = AISuggestionFeedback(suggestion_id=suggestion_id, customer_id=customer_id, target_type=target_type, target_id=target_id, actor_user_id=actor.id, action=action, edited_content=edited_content)
         feedback_dao.add(db, feedback)

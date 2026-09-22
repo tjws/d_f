@@ -41,3 +41,12 @@ class PendingActionDecisionRead(BaseModel):
     action: PendingActionDecisionType
     status: str
     closed: bool
+
+
+class PendingActionDismissRead(BaseModel):
+    """关闭陈旧测试草稿的结果；记录保留，不会物理删除。"""
+
+    action_type: PendingActionType
+    resource_id: int
+    status: str
+    closed: bool

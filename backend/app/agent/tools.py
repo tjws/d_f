@@ -24,17 +24,26 @@ def read_customer_snapshot(db: Session, customer_id: int) -> dict[str, Any]:
     messages = chat_message_dao.list_by_customer(db, customer_id)
     timeline_events = timeline_event_dao.list_by_customer(db, customer_id)
     profile = profile_dao.get_current_confirmed(db, customer_id)
-    latest_inbound = next(
-        (message.content_masked for message in messages if message.direction == "inbound"),
-        None,
-    )
+    # DAO 已按 sent_at 倒序返回。自动决策只看最后一条消息的方向，避免把已经
+    # 回复过的历史来信误当成新的待回复事项，进而重复生成相同回复草稿。
+    latest_message = messages[0] if messages else None
+    latest_message_direction = latest_message.direction if latest_message is not None else None
+    latest_inbound = latest_message_direction == "inbound"
     return {
         "customer_id": customer.id,
         "stage": customer.stage,
         "message_count": len(messages),
         "timeline_count": len(timeline_events),
         "has_confirmed_profile": profile is not None,
-        "has_inbound_message": bool(latest_inbound),
+        "has_inbound_message": latest_inbound,
+        "latest_message_direction": latest_message_direction,
+        "conversation_state": (
+            "needs_sales_reply"
+            if latest_message_direction == "inbound"
+            else "waiting_customer_reply"
+            if latest_message_direction == "outbound"
+            else "no_messages"
+        ),
     }
 
 
@@ -64,7 +73,11 @@ def allowed_tool_trace(snapshot: dict[str, Any], selected_tool: str | None = Non
         {
             "name": selected_tool or "agent.generate_suggestion",
             "status": "ok",
-            "detail": "已交给 LangGraph 生成草稿，尚未执行发送或确认操作",
+            "detail": (
+                "最近一条为销售已发送消息，等待客户回复，不生成重复草稿"
+                if selected_tool == "wait_for_customer_reply"
+                else "已交给 LangGraph 生成草稿，尚未执行发送或确认操作"
+            ),
         },
         {
             "name": "human_confirmation.require",

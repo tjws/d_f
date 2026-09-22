@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.ai.graph import customer_ai_graph
 from app.ai.providers.factory import get_workflow_provider_name
 from app.dao.ai_workflow_run_dao import AIWorkflowRunDAO
+from app.dao.chat_message_dao import ChatMessageDAO
 from app.dao.system_setting_dao import SystemSettingDAO
 from app.db.session import SessionLocal
 from app.models.ai_workflow_run import AIWorkflowRun
@@ -19,6 +20,7 @@ from app.services.ai_rag_telemetry_service import record_rag_interaction
 
 
 workflow_run_dao = AIWorkflowRunDAO()
+chat_message_dao = ChatMessageDAO()
 system_setting_dao = SystemSettingDAO()
 _VALID_GOALS = {"profile", "reply", "tag", "schedule"}
 logger = logging.getLogger("k12.ai")
@@ -104,6 +106,16 @@ def run_customer_ai_workflow(
     customer = get_customer_or_404(db, customer_id, current_user, "update")
     if workflow_goal not in _VALID_GOALS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的 AI 工作流目标")
+
+    # 回复建议只能回应当前会话轮次的客户来信。若最新消息已经是销售发送，
+    # 拒绝再次生成，防止绕过 Agent 入口后仍重复发送相同话术。
+    if workflow_goal == "reply":
+        latest_message = next(iter(chat_message_dao.list_by_customer(db, customer_id)), None)
+        if latest_message is not None and latest_message.direction == "outbound":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="当前正等待客户回复，不能生成新的回复建议",
+            )
 
     if idempotency_key:
         existing = workflow_run_dao.get_by_idempotency_key(
